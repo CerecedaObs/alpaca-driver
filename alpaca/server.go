@@ -3,11 +3,12 @@
 package alpaca
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync/atomic"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type baseResponse struct {
@@ -45,6 +46,10 @@ func NewServer(description ServerDescription, devices []Device) *Server {
 	return &server
 }
 
+type DeviceHTTPHandler interface {
+	RegisterRoutes(mux *http.ServeMux)
+}
+
 func (s *Server) AddRoutes() *http.ServeMux {
 	r := http.NewServeMux()
 	r.HandleFunc("GET /management/apiversions", s.handleAPIVersions)
@@ -52,33 +57,37 @@ func (s *Server) AddRoutes() *http.ServeMux {
 	r.HandleFunc("GET /management/v1/configureddevices", s.handleConfiguredDevices)
 	r.HandleFunc("GET /setup", s.handleSetup)
 
-	// Add device specific routes
+	// Create handlers for each device
 	for _, dev := range s.devices {
-		handler := NewDeviceHandler(dev)
-		mux := handler.RegisterRoutes()
+		mux := http.NewServeMux()
+		var handler DeviceHTTPHandler
 
-		devType := strings.ToLower(handler.dev.DeviceInfo().Type)
-		prefix := fmt.Sprintf("/api/v1/%s/%d", devType, handler.dev.DeviceInfo().Number)
+		switch d := dev.(type) {
+		case Dome:
+			handler = NewDomeHandler(d)
+			handler.RegisterRoutes(mux)
+		default:
+			log.Errorf("Unknown device type: %T", dev)
+			handler = &DeviceHandler{dev: dev}
+			handler.RegisterRoutes(mux)
+		}
+
+		devType := strings.ToLower(dev.DeviceInfo().Type.String())
+		devNumber := dev.DeviceInfo().Number
+
+		prefix := fmt.Sprintf("/api/v1/%s/%d", devType, devNumber)
 		r.Handle(prefix+"/", http.StripPrefix(prefix, mux))
 	}
 
 	return r
 }
 
-func (s *Server) handleResponse(w http.ResponseWriter, value interface{}) {
-	response := baseResponse{
-		ServerTransactionID: int(txCounter.Add(1)),
-		Value:               value,
-	}
-	json.NewEncoder(w).Encode(response)
-}
-
 func (s *Server) handleAPIVersions(w http.ResponseWriter, r *http.Request) {
-	s.handleResponse(w, []int{1})
+	handleResponse(w, []int{1})
 }
 
 func (s *Server) handleDescription(w http.ResponseWriter, r *http.Request) {
-	s.handleResponse(w, s.description)
+	handleResponse(w, s.description)
 }
 
 func (s *Server) handleConfiguredDevices(w http.ResponseWriter, r *http.Request) {
@@ -87,10 +96,10 @@ func (s *Server) handleConfiguredDevices(w http.ResponseWriter, r *http.Request)
 		deviceInfo = append(deviceInfo, device.DeviceInfo())
 	}
 
-	s.handleResponse(w, deviceInfo)
+	handleResponse(w, deviceInfo)
 }
 
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement setup user interface
-	s.handleResponse(w, "Not Implemented")
+	handleResponse(w, "Not Implemented")
 }

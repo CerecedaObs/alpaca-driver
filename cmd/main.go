@@ -2,6 +2,7 @@ package main
 
 import (
 	"alpaca/alpaca"
+	"alpaca/alpaca/simulators"
 	"context"
 	"net/http"
 	"os"
@@ -13,9 +14,10 @@ import (
 )
 
 func main() {
+	log.SetLevel(log.DebugLevel)
 	log.Info("ZRO Alpaca Server")
 
-	dome := alpaca.NewDome()
+	dome := simulators.NewDomeSimulator(0)
 
 	server := alpaca.NewServer(
 		alpaca.ServerDescription{
@@ -24,7 +26,9 @@ func main() {
 			ManufacturerVersion: "1.0",
 			Location:            "ZRO",
 		},
-		[]alpaca.Device{dome},
+		[]alpaca.Device{
+			dome,
+		},
 	)
 
 	mux := server.AddRoutes()
