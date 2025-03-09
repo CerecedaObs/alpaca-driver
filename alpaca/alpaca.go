@@ -2,13 +2,18 @@ package alpaca
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
-func handleResponse(w http.ResponseWriter, value interface{}) {
+var ErrInvalidContentType = errors.New("invalid content type")
+
+func handleResponse(w http.ResponseWriter, value any) {
 	response := baseResponse{
 		ServerTransactionID: int(txCounter.Add(1)),
-		Value:               value,
+	}
+	if value != nil {
+		response.Value = value
 	}
 	json.NewEncoder(w).Encode(response)
 }
@@ -20,4 +25,13 @@ func handleError(w http.ResponseWriter, code int, message string) {
 		ErrorMessage:        message,
 	}
 	json.NewEncoder(w).Encode(response)
+}
+
+func parseRequest(r *http.Request, v any) error {
+	if r.Header.Get("Content-Type") != "application/json" {
+		return ErrInvalidContentType
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	return decoder.Decode(v)
 }

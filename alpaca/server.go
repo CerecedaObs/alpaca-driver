@@ -12,11 +12,11 @@ import (
 )
 
 type baseResponse struct {
-	ClientTransactionID int         `json:"ClientTransactionID"`
-	ServerTransactionID int         `json:"ServerTransactionID"`
-	ErrorNumber         int         `json:"ErrorNumber"`
-	ErrorMessage        string      `json:"ErrorMessage"`
-	Value               interface{} `json:"Value"`
+	ClientTransactionID int    `json:"ClientTransactionID"`
+	ServerTransactionID int    `json:"ServerTransactionID"`
+	ErrorNumber         int    `json:"ErrorNumber"`
+	ErrorMessage        string `json:"ErrorMessage"`
+	Value               any    `json:"Value,omitempty"`
 }
 
 type ServerDescription struct {
