@@ -2,8 +2,6 @@ package alpaca
 
 import (
 	"net/http"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type DomeCapabilities struct {
@@ -90,187 +88,179 @@ func NewDomeHandler(dev Dome) *DomeHandler {
 func (dh *DomeHandler) RegisterRoutes(mux *http.ServeMux) {
 	dh.DeviceHandler.RegisterRoutes(mux)
 
-	mux.HandleFunc("/altitude", dh.handleStatus)
-	mux.HandleFunc("/athome", dh.handleStatus)
-	mux.HandleFunc("/atpark", dh.handleStatus)
-	mux.HandleFunc("/azimuth", dh.handleStatus)
-	mux.HandleFunc("/shutterstatus", dh.handleStatus)
-	mux.HandleFunc("/slewing", dh.handleStatus)
-	mux.HandleFunc("/slaved", dh.handleStatus)
+	mux.HandleFunc("GET /altitude", dh.handleStatus)
+	mux.HandleFunc("GET /athome", dh.handleStatus)
+	mux.HandleFunc("GET /atpark", dh.handleStatus)
+	mux.HandleFunc("GET /azimuth", dh.handleStatus)
+	mux.HandleFunc("GET /shutterstatus", dh.handleStatus)
+	mux.HandleFunc("GET /slewing", dh.handleStatus)
+	mux.HandleFunc("GET /slaved", dh.handleStatus)
 
-	mux.HandleFunc("/canfindhome", dh.handleCapabilities)
-	mux.HandleFunc("/canpark", dh.handleCapabilities)
-	mux.HandleFunc("/cansetaltitude", dh.handleCapabilities)
-	mux.HandleFunc("/cansetazimuth", dh.handleCapabilities)
-	mux.HandleFunc("/cansetpark", dh.handleCapabilities)
-	mux.HandleFunc("/cansetshutter", dh.handleCapabilities)
-	mux.HandleFunc("/canslave", dh.handleCapabilities)
-	mux.HandleFunc("/cansyncazimuth", dh.handleCapabilities)
+	mux.HandleFunc("GET /canfindhome", dh.handleCapabilities)
+	mux.HandleFunc("GET /canpark", dh.handleCapabilities)
+	mux.HandleFunc("GET /cansetaltitude", dh.handleCapabilities)
+	mux.HandleFunc("GET /cansetazimuth", dh.handleCapabilities)
+	mux.HandleFunc("GET /cansetpark", dh.handleCapabilities)
+	mux.HandleFunc("GET /cansetshutter", dh.handleCapabilities)
+	mux.HandleFunc("GET /canslave", dh.handleCapabilities)
+	mux.HandleFunc("GET /cansyncazimuth", dh.handleCapabilities)
 
-	mux.HandleFunc("/slewtoaltitude", dh.handleSlewToAltitude)
-	mux.HandleFunc("/slewtoazimuth", dh.handleSlewToAzimuth)
-	mux.HandleFunc("/synctoazimuth", dh.handleSyncToAzimuth)
-	mux.HandleFunc("/abortslew", dh.handleAbortSlew)
-	mux.HandleFunc("/findhome", dh.handleFindHome)
-	mux.HandleFunc("/park", dh.handlePark)
-	mux.HandleFunc("/setpark", dh.handleSetPark)
-	mux.HandleFunc("/setshutter", dh.handleSetShutter)
+	mux.HandleFunc("PUT /slewtoaltitude", dh.handleSlewToAltitude)
+	mux.HandleFunc("PUT /slewtoazimuth", dh.handleSlewToAzimuth)
+	mux.HandleFunc("PUT /synctoazimuth", dh.handleSyncToAzimuth)
+	mux.HandleFunc("PUT /abortslew", dh.handleAbortSlew)
+	mux.HandleFunc("PUT /findhome", dh.handleFindHome)
+	mux.HandleFunc("PUT /park", dh.handlePark)
+	mux.HandleFunc("PUT /setpark", dh.handleSetPark)
+	mux.HandleFunc("PUT /openshutter", dh.handleOpenShutter)
+	mux.HandleFunc("PUT /closeshutter", dh.handleCloseShutter)
 }
 
 func (dh *DomeHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
-	property := r.URL.Path[1:]
-	log.Debugf("Dome property: %s", property)
-
 	status := dh.dev.Status()
 
+	property := r.URL.Path[1:]
 	switch property {
 	case "altitude":
-		handleResponse(w, status.Altitude)
+		handleResponse(w, r, status.Altitude)
 	case "athome":
-		handleResponse(w, status.AtHome)
+		handleResponse(w, r, status.AtHome)
 	case "atpark":
-		handleResponse(w, status.AtPark)
+		handleResponse(w, r, status.AtPark)
 	case "azimuth":
-		handleResponse(w, status.Azimuth)
+		handleResponse(w, r, status.Azimuth)
 	case "shutterstatus":
-		handleResponse(w, status.Shutter)
+		handleResponse(w, r, status.Shutter)
 	case "slewing":
-		handleResponse(w, status.Slewing)
+		handleResponse(w, r, status.Slewing)
 	case "slaved":
-		handleResponse(w, status.Slaved)
+		handleResponse(w, r, status.Slaved)
 	default:
-		handleError(w, http.StatusNotFound, "Property not found")
+		handleError(w, r, http.StatusNotFound, "Property not found")
 	}
 }
 
 func (dh *DomeHandler) handleCapabilities(w http.ResponseWriter, r *http.Request) {
-	property := r.URL.Path[1:]
-	log.Debugf("Dome property: %s", property)
-
 	cap := dh.dev.Capabilities()
 
+	property := r.URL.Path[1:]
 	switch property {
 	case "canfindhome":
-		handleResponse(w, cap.CanFindHome)
+		handleResponse(w, r, cap.CanFindHome)
 	case "canpark":
-		handleResponse(w, cap.CanPark)
+		handleResponse(w, r, cap.CanPark)
 	case "cansetaltitude":
-		handleResponse(w, cap.CanSetAltitude)
+		handleResponse(w, r, cap.CanSetAltitude)
 	case "cansetazimuth":
-		handleResponse(w, cap.CanSetAzimuth)
+		handleResponse(w, r, cap.CanSetAzimuth)
 	case "cansetpark":
-		handleResponse(w, cap.CanSetPark)
+		handleResponse(w, r, cap.CanSetPark)
 	case "cansetshutter":
-		handleResponse(w, cap.CanSetShutter)
+		handleResponse(w, r, cap.CanSetShutter)
 	case "canslave":
-		handleResponse(w, cap.CanSlave)
+		handleResponse(w, r, cap.CanSlave)
 	case "cansyncazimuth":
-		handleResponse(w, cap.CanSyncAzimuth)
+		handleResponse(w, r, cap.CanSyncAzimuth)
 	default:
-		handleError(w, http.StatusNotFound, "Property not found")
+		handleError(w, r, http.StatusNotFound, "Property not found")
 	}
 }
 
 func (dh *DomeHandler) handleSlewToAltitude(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Altitude float64 `json:"altitude"`
-	}
-	if err := parseRequest(r, &req); err != nil {
-		handleError(w, http.StatusBadRequest, err.Error())
+	altitude, err := parseFloatRequest(r, "Altitude")
+	if err != nil {
+		handleError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := dh.dev.SlewToAltitude(req.Altitude); err != nil {
-		handleError(w, http.StatusInternalServerError, err.Error())
+	if err := dh.dev.SlewToAltitude(altitude); err != nil {
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	handleResponse(w, nil)
+	handleResponse(w, r, nil)
 }
 
 func (dh *DomeHandler) handleSlewToAzimuth(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Azimuth float64 `json:"azimuth"`
-	}
-	if err := parseRequest(r, &req); err != nil {
-		handleError(w, http.StatusBadRequest, err.Error())
+	azimuth, err := parseFloatRequest(r, "Azimuth")
+	if err != nil {
+		handleError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := dh.dev.SlewToAzimuth(req.Azimuth); err != nil {
-		handleError(w, http.StatusInternalServerError, err.Error())
+	if err := dh.dev.SlewToAzimuth(azimuth); err != nil {
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	handleResponse(w, nil)
+	handleResponse(w, r, nil)
 }
 
 func (dh *DomeHandler) handleSyncToAzimuth(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Azimuth float64 `json:"azimuth"`
-	}
-	if err := parseRequest(r, &req); err != nil {
-		handleError(w, http.StatusBadRequest, err.Error())
+	azimuth, err := parseFloatRequest(r, "Azimuth")
+	if err != nil {
+		handleError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := dh.dev.SyncToAzimuth(req.Azimuth); err != nil {
-		handleError(w, http.StatusInternalServerError, err.Error())
+	if err := dh.dev.SyncToAzimuth(azimuth); err != nil {
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	handleResponse(w, nil)
+	handleResponse(w, r, nil)
 }
 
 func (dh *DomeHandler) handleAbortSlew(w http.ResponseWriter, r *http.Request) {
 	if err := dh.dev.AbortSlew(); err != nil {
-		handleError(w, http.StatusInternalServerError, err.Error())
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	handleResponse(w, nil)
+	handleResponse(w, r, nil)
 }
 
 func (dh *DomeHandler) handleFindHome(w http.ResponseWriter, r *http.Request) {
 	if err := dh.dev.FindHome(); err != nil {
-		handleError(w, http.StatusInternalServerError, err.Error())
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	handleResponse(w, nil)
+	handleResponse(w, r, nil)
 }
 
 func (dh *DomeHandler) handlePark(w http.ResponseWriter, r *http.Request) {
 	if err := dh.dev.Park(); err != nil {
-		handleError(w, http.StatusInternalServerError, err.Error())
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	handleResponse(w, nil)
+	handleResponse(w, r, nil)
 }
 
 func (dh *DomeHandler) handleSetPark(w http.ResponseWriter, r *http.Request) {
 	if err := dh.dev.SetPark(); err != nil {
-		handleError(w, http.StatusInternalServerError, err.Error())
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	handleResponse(w, nil)
+	handleResponse(w, r, nil)
 }
 
-func (dh *DomeHandler) handleSetShutter(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Command ShutterCommand `json:"command"`
-	}
-	if err := parseRequest(r, &req); err != nil {
-		handleError(w, http.StatusBadRequest, err.Error())
+func (dh *DomeHandler) handleOpenShutter(w http.ResponseWriter, r *http.Request) {
+	if err := dh.dev.SetShutter(ShutterCommandOpen); err != nil {
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	if err := dh.dev.SetShutter(req.Command); err != nil {
-		handleError(w, http.StatusInternalServerError, err.Error())
+	handleResponse(w, r, nil)
+}
+
+func (dh *DomeHandler) handleCloseShutter(w http.ResponseWriter, r *http.Request) {
+	if err := dh.dev.SetShutter(ShutterCommandClose); err != nil {
+		handleError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	handleResponse(w, nil)
+	handleResponse(w, r, nil)
 }

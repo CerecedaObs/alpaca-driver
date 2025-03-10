@@ -67,56 +67,79 @@ func (h *DeviceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /interfaceversion", h.handleInterfaceVersion)
 	mux.HandleFunc("GET /devicestate", h.handleState)
 
-	mux.HandleFunc("GET /connected", h.handleConnected)
+	mux.HandleFunc("/connected", h.handleConnected)
 	mux.HandleFunc("GET /connecting", h.handleConnecting)
 	mux.HandleFunc("PUT /connect", h.handleConnect)
 	mux.HandleFunc("PUT /disconnect", h.handleDisconnect)
 }
 
 func (h *DeviceHandler) handleName(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, h.dev.DeviceInfo().Name)
+	handleResponse(w, r, h.dev.DeviceInfo().Name)
 }
 
 func (h *DeviceHandler) handleDescription(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, h.dev.DeviceInfo().Description)
+	handleResponse(w, r, h.dev.DeviceInfo().Description)
 }
 
 func (h *DeviceHandler) handleDriverInfo(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, h.dev.DriverInfo())
+	handleResponse(w, r, h.dev.DriverInfo())
 }
 
 func (h *DeviceHandler) handleDriverVersion(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, h.dev.DriverInfo().Version)
+	handleResponse(w, r, h.dev.DriverInfo().Version)
 }
 
 func (h *DeviceHandler) handleInterfaceVersion(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, h.dev.DriverInfo().InterfaceVersion)
+	handleResponse(w, r, h.dev.DriverInfo().InterfaceVersion)
 }
 
 func (h *DeviceHandler) handleState(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, h.dev.GetState())
+	handleResponse(w, r, h.dev.GetState())
 }
 
 func (h *DeviceHandler) handleConnected(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, h.dev.Connected())
+	switch r.Method {
+	case "PUT":
+		connected, err := parseBoolRequest(r, "Connected")
+		if err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		if connected {
+			if err := h.dev.Connect(); err != nil {
+				handleError(w, r, 500, err.Error())
+				return
+			}
+		} else {
+			if err := h.dev.Disconnect(); err != nil {
+				handleError(w, r, 500, err.Error())
+				return
+			}
+		}
+	case "GET":
+		handleResponse(w, r, h.dev.Connected())
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (h *DeviceHandler) handleConnecting(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, h.dev.Connecting())
+	handleResponse(w, r, h.dev.Connecting())
 }
 
 func (h *DeviceHandler) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if err := h.dev.Connect(); err != nil {
-		handleError(w, 500, err.Error())
+		handleError(w, r, 500, err.Error())
 		return
 	}
-	handleResponse(w, true)
+	handleResponse(w, r, true)
 }
 
 func (h *DeviceHandler) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 	if err := h.dev.Disconnect(); err != nil {
-		handleError(w, 500, err.Error())
+		handleError(w, r, 500, err.Error())
 		return
 	}
-	handleResponse(w, true)
+	handleResponse(w, r, true)
 }

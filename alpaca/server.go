@@ -6,18 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync/atomic"
 
 	log "github.com/sirupsen/logrus"
 )
-
-type baseResponse struct {
-	ClientTransactionID int    `json:"ClientTransactionID"`
-	ServerTransactionID int    `json:"ServerTransactionID"`
-	ErrorNumber         int    `json:"ErrorNumber"`
-	ErrorMessage        string `json:"ErrorMessage"`
-	Value               any    `json:"Value,omitempty"`
-}
 
 type ServerDescription struct {
 	Name                string `json:"ServerName"`
@@ -25,9 +16,6 @@ type ServerDescription struct {
 	ManufacturerVersion string `json:"ManufacturerVersion"`
 	Location            string `json:"Location"`
 }
-
-// Global transaction counter
-var txCounter atomic.Int32
 
 // Server is an Alpaca management server that provides information
 // about the server and the devices it manages.
@@ -83,11 +71,11 @@ func (s *Server) AddRoutes() *http.ServeMux {
 }
 
 func (s *Server) handleAPIVersions(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, []int{1})
+	handleResponse(w, r, []int{1})
 }
 
 func (s *Server) handleDescription(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, s.description)
+	handleResponse(w, r, s.description)
 }
 
 func (s *Server) handleConfiguredDevices(w http.ResponseWriter, r *http.Request) {
@@ -96,10 +84,10 @@ func (s *Server) handleConfiguredDevices(w http.ResponseWriter, r *http.Request)
 		deviceInfo = append(deviceInfo, device.DeviceInfo())
 	}
 
-	handleResponse(w, deviceInfo)
+	handleResponse(w, r, deviceInfo)
 }
 
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement setup user interface
-	handleResponse(w, "Not Implemented")
+	handleResponse(w, r, "Not Implemented")
 }

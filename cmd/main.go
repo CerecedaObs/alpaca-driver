@@ -4,6 +4,8 @@ import (
 	"alpaca/alpaca"
 	"alpaca/alpaca/simulators"
 	"context"
+	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +16,9 @@ import (
 )
 
 func main() {
+	port := flag.Uint("port", 8080, "Port to listen on")
+	flag.Parse()
+
 	log.SetLevel(log.DebugLevel)
 	log.Info("ZRO Alpaca Server")
 
@@ -34,7 +39,7 @@ func main() {
 	mux := server.AddRoutes()
 
 	srv := &http.Server{
-		Addr:    ":8080",
+		Addr:    fmt.Sprintf(":%d", *port),
 		Handler: mux,
 	}
 
@@ -45,7 +50,7 @@ func main() {
 	go func() {
 		log.Debug("Server started")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Could not listen on :8080: %v\n", err)
+			log.Fatalf("Could not listen on %s: %v\n", srv.Addr, err)
 		}
 	}()
 
