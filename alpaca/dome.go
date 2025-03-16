@@ -2,6 +2,8 @@ package alpaca
 
 import (
 	"net/http"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type DomeCapabilities struct {
@@ -75,13 +77,17 @@ type Dome interface {
 
 type DomeHandler struct {
 	DeviceHandler
-	dev Dome
+	dev    Dome
+	logger log.FieldLogger
 }
 
-func NewDomeHandler(dev Dome) *DomeHandler {
+func NewDomeHandler(dev Dome, logger log.FieldLogger) *DomeHandler {
+	logger.Infof("Creating new DomeHandler for device %s", dev.DeviceInfo().Name)
+
 	return &DomeHandler{
 		DeviceHandler: DeviceHandler{dev: dev},
 		dev:           dev,
+		logger:        logger,
 	}
 }
 
@@ -172,11 +178,13 @@ func (dh *DomeHandler) handleSlaved(w http.ResponseWriter, r *http.Request) {
 	case "PUT":
 		slaved, err := parseBoolRequest(r, "Slaved")
 		if err != nil {
+			dh.logger.Errorf("Error parsing request: %v", err)
 			handleError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 
 		if err := dh.dev.SetSlaved(slaved); err != nil {
+			dh.logger.Errorf("Error setting slaved: %v", err)
 			handleError(w, r, http.StatusInternalServerError, err.Error())
 			return
 		}

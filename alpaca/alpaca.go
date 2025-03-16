@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Global transaction counter
@@ -35,9 +37,10 @@ func parseBodyParams(r *http.Request) (url.Values, error) {
 }
 
 // getClientTxID obtains the client transaction ID from the request body.
-func getClientTxID(params url.Values) (int, error) {
+func getClientTxID(params url.Values, caseSensitive bool) (int, error) {
 	for param, value := range params {
-		if strings.ToLower(param) == "clienttransactionid" {
+		if caseSensitive && param == "ClientTransactionID" ||
+			!caseSensitive && strings.ToLower(param) == "clienttransactionid" {
 			id, _ := strconv.Atoi(value[0])
 			if id < 0 {
 				return 0, errors.New("ClientTransactionID must be non-negative")
@@ -59,10 +62,20 @@ func getClientID(params url.Values) (string, error) {
 }
 
 func handleResponse(w http.ResponseWriter, r *http.Request, value any) {
-	params := r.URL.Query()
+	var params url.Values
 
-	txID, err := getClientTxID(params)
+	if r.Method == "PUT" {
+		// PUT requests have the parameters in the body.
+		params, _ = parseBodyParams(r)
+
+	} else {
+		// GET requests have the parameters in the URL.
+		params = r.URL.Query()
+	}
+
+	txID, err := getClientTxID(params, false)
 	if err != nil {
+		log.Errorf("Error parsing request %s wit params %v: %v", r.URL.Path, params, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -81,7 +94,7 @@ func handleResponse(w http.ResponseWriter, r *http.Request, value any) {
 func handleError(w http.ResponseWriter, r *http.Request, code int, message string) {
 	params := r.URL.Query()
 
-	txID, err := getClientTxID(params)
+	txID, err := getClientTxID(params, false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -104,12 +117,11 @@ func parseRequest(r *http.Request, field string) (string, error) {
 		return "", err
 	}
 
-	for param, value := range params {
-		if strings.EqualFold(param, field) {
-			return value[0], nil
-		}
+	value, ok := params[field]
+	if !ok {
+		return "", errors.New("missing field")
 	}
-	return "", errors.New("missing field")
+	return value[0], nil
 }
 
 func parseBoolRequest(r *http.Request, field string) (bool, error) {

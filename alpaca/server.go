@@ -64,7 +64,8 @@ func (s *Server) AddRoutes() *http.ServeMux {
 
 		switch d := dev.(type) {
 		case Dome:
-			handler = NewDomeHandler(d)
+			logger := log.WithField("device", d.DeviceInfo().Name)
+			handler = NewDomeHandler(d, logger)
 			handler.RegisterRoutes(mux)
 		default:
 			log.Errorf("Unknown device type: %T", dev)
