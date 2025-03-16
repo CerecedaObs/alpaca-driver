@@ -14,6 +14,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	bolt "go.etcd.io/bbolt"
 )
 
 const templateDir = "templates"
@@ -30,20 +31,27 @@ func main() {
 		log.Fatalf("Error loading setup template: %v", err)
 	}
 
-	dome := simulators.NewDomeSimulator(0, tmpl, log.WithField("device", "dome"))
+	db, err := bolt.Open("alpaca.db", 0600, nil)
+	if err != nil {
+		log.Fatalf("Error opening database: %v", err)
+	}
+	defer db.Close()
 
-	server := alpaca.NewServer(
-		alpaca.ServerDescription{
-			Name:                "ZRO Alpaca Server",
-			Manufacturer:        "ZRO",
-			ManufacturerVersion: "1.0",
-			Location:            "ZRO",
-		},
-		[]alpaca.Device{
-			dome,
-		},
-		tmpl,
-	)
+	dome := simulators.NewDomeSimulator(0, db, tmpl, log.WithField("device", "dome"))
+
+	serverDesc := alpaca.ServerDescription{
+		Name:                "ZRO Alpaca Server",
+		Manufacturer:        "ZRO",
+		ManufacturerVersion: "1.0",
+		Location:            "ZRO",
+	}
+
+	store, err := alpaca.NewStore(db)
+	if err != nil {
+		log.Fatalf("Error creating store: %v", err)
+	}
+
+	server := alpaca.NewServer(serverDesc, []alpaca.Device{dome}, store, tmpl)
 
 	mux := server.AddRoutes()
 

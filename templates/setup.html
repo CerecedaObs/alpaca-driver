@@ -1,25 +1,36 @@
 {{define "driverSettings"}}
-<form action="/submit" method="post"></form>
+<form action="" method="post">
     <div class="section">
         <h4>MQTT Settings</h4>
         <div class="mb-3">
-            <label for="broker" class="form-label">Broker:</label>
-            <input type="text" id="broker" name="broker" class="form-control" required>
+            <label for="host" class="form-label">Broker:</label>
+            <input type="text" id="host" name="host" class="form-control" required value="{{.Host}}">
         </div>
         <div class="mb-3">
             <label for="port" class="form-label">Port:</label>
-            <input type="number" id="port" name="port" class="form-control" required>
+            <input type="number" id="port" name="port" class="form-control" required value="{{.Port}}">
         </div>
         <div class="mb-3">
             <label for="username" class="form-label">Username:</label>
-            <input type="text" id="username" name="username" class="form-control" required>
+            <input type="text" id="username" name="username" class="form-control" required value="{{.Username}}">
         </div>
         <div class="mb-3">
             <label for="password" class="form-label">Password:</label>
-            <input type="password" id="password" name="password" class="form-control" required>
+            <input type="password" id="password" name="password" class="form-control" required value="{{.Password}}">
         </div>
         <button type="submit" class="btn btn-primary">Save</button>
     </div>
+
+    {{if .Success}}
+    <div class="alert alert-success mt-3" role="alert">
+        Settings saved successfully.
+    </div>
+    {{end}}
+    {{if .Error}}
+    <div class="alert alert-danger mt-3" role="alert">
+        {{.Error}}
+    </div>
+    {{end}}
 </form>
 {{end}}
 
@@ -31,7 +42,7 @@
         </div>
         <div class="container" style="max-width: 500px;">
             <div class="col-md-4"></div>
-                {{template "driverSettings"}}
+                {{template "driverSettings" .}}
             </div>
         </div>
     </main>

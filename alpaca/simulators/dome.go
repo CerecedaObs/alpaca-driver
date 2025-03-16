@@ -9,6 +9,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	bolt "go.etcd.io/bbolt"
 )
 
 const (
@@ -21,21 +22,24 @@ const (
 
 // DomeSimulator implements the alpaca.Dome interface
 type DomeSimulator struct {
+	logger log.FieldLogger
+	tmpl   *template.Template
+	db     *bolt.DB
+
 	info         alpaca.DeviceInfo
 	driver       alpaca.DriverInfo
 	capabilities alpaca.DomeCapabilities
 	status       alpaca.DomeStatus
-	logger       log.FieldLogger
-	templates    *template.Template
 
 	connected  bool
 	connecting bool
 }
 
-func NewDomeSimulator(number int, templates *template.Template, logger log.FieldLogger) *DomeSimulator {
+func NewDomeSimulator(number int, db *bolt.DB, tmpl *template.Template, logger log.FieldLogger) *DomeSimulator {
 	return &DomeSimulator{
-		logger:    logger,
-		templates: templates,
+		logger: logger,
+		tmpl:   tmpl,
+		db:     db,
 
 		info: alpaca.DeviceInfo{
 			Name:     deviceName,
@@ -190,7 +194,7 @@ func (d *DomeSimulator) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Use the pre-parsed template
-	err := d.templates.ExecuteTemplate(w, "dome_setup.html", d)
+	err := d.tmpl.ExecuteTemplate(w, "dome_setup.html", d)
 	if err != nil {
 		http.Error(w, "Error rendering template", http.StatusInternalServerError)
 		d.logger.Errorf("Error rendering template: %v", err)

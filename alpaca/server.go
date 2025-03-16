@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -24,14 +25,16 @@ type Server struct {
 	description ServerDescription
 	devices     []Device
 
+	db   *store
 	tmpl *template.Template
 }
 
 // NewServer creates a new ManagementServer instance.
-func NewServer(description ServerDescription, devices []Device, tmpl *template.Template) *Server {
+func NewServer(description ServerDescription, devices []Device, db *store, tmpl *template.Template) *Server {
 	server := Server{
 		description: description,
 		devices:     devices,
+		db:          db,
 		tmpl:        tmpl,
 	}
 
@@ -47,7 +50,7 @@ func (s *Server) AddRoutes() *http.ServeMux {
 	r.HandleFunc("GET /management/apiversions", s.handleAPIVersions)
 	r.HandleFunc("GET /management/v1/description", s.handleDescription)
 	r.HandleFunc("GET /management/v1/configureddevices", s.handleConfiguredDevices)
-	r.HandleFunc("GET /setup", s.handleSetup)
+	r.HandleFunc("/setup", s.handleSetup)
 
 	// Create handlers for each device
 	for _, dev := range s.devices {
@@ -97,10 +100,62 @@ func (s *Server) handleConfiguredDevices(w http.ResponseWriter, r *http.Request)
 
 // handleSetup returns a user interface for setting up the server.
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
-	// Use the pre-parsed /home/jme/go/alpaca-driver/alpaca/templates/setup.html")
-	err := s.tmpl.ExecuteTemplate(w, "setup.html", s)
-	if err != nil {
-		http.Error(w, "Error rendering template", http.StatusInternalServerError)
-		log.Errorf("Error rendering template: %v", err)
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := s.db.GetMQTTConfig()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.renderSetupForm(w, cfg, false, "")
+
+	case http.MethodPost:
+		cfg, err := parseSetupForm(r)
+		if err != nil {
+			s.renderSetupForm(w, cfg, false, err.Error())
+			return
+		}
+
+		log.Infof("Setting MQTT config: %+v", cfg)
+		if err := s.db.SetMQTTConfig(cfg); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.renderSetupForm(w, cfg, true, "")
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+
 	}
+}
+
+func (s *Server) renderSetupForm(w http.ResponseWriter, cfg MQTTConfig, success bool, err string) {
+	data := struct {
+		MQTTConfig
+		Success bool
+		Error   string
+	}{cfg, success, err}
+
+	if err := s.tmpl.ExecuteTemplate(w, "setup.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func parseSetupForm(r *http.Request) (MQTTConfig, error) {
+	if err := r.ParseForm(); err != nil {
+		return MQTTConfig{}, fmt.Errorf("error parsing form: %v", err)
+	}
+
+	port := r.FormValue("port")
+	intPort, err := strconv.Atoi(port)
+	if err != nil {
+		return MQTTConfig{}, fmt.Errorf("invalid port: %v", err)
+	}
+
+	return MQTTConfig{
+		Host:     r.FormValue("host"),
+		Port:     intPort,
+		Username: r.FormValue("username"),
+		Password: r.FormValue("password"),
+	}, nil
 }
