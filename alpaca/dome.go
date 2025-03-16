@@ -94,7 +94,8 @@ func (dh *DomeHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /azimuth", dh.handleStatus)
 	mux.HandleFunc("GET /shutterstatus", dh.handleStatus)
 	mux.HandleFunc("GET /slewing", dh.handleStatus)
-	mux.HandleFunc("GET /slaved", dh.handleStatus)
+
+	mux.HandleFunc("/slaved", dh.handleSlaved)
 
 	mux.HandleFunc("GET /canfindhome", dh.handleCapabilities)
 	mux.HandleFunc("GET /canpark", dh.handleCapabilities)
@@ -163,6 +164,28 @@ func (dh *DomeHandler) handleCapabilities(w http.ResponseWriter, r *http.Request
 		handleResponse(w, r, cap.CanSyncAzimuth)
 	default:
 		handleError(w, r, http.StatusNotFound, "Property not found")
+	}
+}
+
+func (dh *DomeHandler) handleSlaved(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "PUT":
+		slaved, err := parseBoolRequest(r, "Slaved")
+		if err != nil {
+			handleError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if err := dh.dev.SetSlaved(slaved); err != nil {
+			handleError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		handleResponse(w, r, slaved)
+	case "GET":
+		handleResponse(w, r, dh.dev.Status().Slaved)
+	default:
+		handleError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 

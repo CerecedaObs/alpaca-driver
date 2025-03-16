@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"text/template"
 
 	log "github.com/sirupsen/logrus"
 )
+
+const templateDir = "templates"
 
 type ServerDescription struct {
 	Name                string `json:"ServerName"`
@@ -22,13 +25,21 @@ type ServerDescription struct {
 type Server struct {
 	description ServerDescription
 	devices     []Device
+
+	tmpl *template.Template
 }
 
 // NewServer creates a new ManagementServer instance.
 func NewServer(description ServerDescription, devices []Device) *Server {
+	tmpl, err := template.ParseGlob(templateDir + "/*.html")
+	if err != nil {
+		log.Fatalf("Error loading setup template: %v", err)
+	}
+
 	server := Server{
 		description: description,
 		devices:     devices,
+		tmpl:        tmpl,
 	}
 
 	return &server
@@ -44,6 +55,7 @@ func (s *Server) AddRoutes() *http.ServeMux {
 	r.HandleFunc("GET /management/v1/description", s.handleDescription)
 	r.HandleFunc("GET /management/v1/configureddevices", s.handleConfiguredDevices)
 	r.HandleFunc("GET /setup", s.handleSetup)
+	r.HandleFunc("GET /setup/v1/dome/0/setup", s.handleDomeSetup)
 
 	// Create handlers for each device
 	for _, dev := range s.devices {
@@ -87,7 +99,20 @@ func (s *Server) handleConfiguredDevices(w http.ResponseWriter, r *http.Request)
 	handleResponse(w, r, deviceInfo)
 }
 
+// handleSetup returns a user interface for setting up the server.
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement setup user interface
-	handleResponse(w, r, "Not Implemented")
+	// Use the pre-parsed /home/jme/go/alpaca-driver/alpaca/templates/setup.html")
+	err := s.tmpl.ExecuteTemplate(w, "setup.html", s)
+	if err != nil {
+		http.Error(w, "Error rendering template", http.StatusInternalServerError)
+		log.Errorf("Error rendering template: %v", err)
+	}
+}
+
+func (s *Server) handleDomeSetup(w http.ResponseWriter, r *http.Request) {
+	err := s.tmpl.ExecuteTemplate(w, "dome_setup.html", s)
+	if err != nil {
+		http.Error(w, "Error rendering template", http.StatusInternalServerError)
+		log.Errorf("Error rendering template: %v", err)
+	}
 }

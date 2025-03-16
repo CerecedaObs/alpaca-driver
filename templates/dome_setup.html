@@ -1,0 +1,36 @@
+{{define "domeSettings"}}
+<form action="/submit" method="post"></form>
+    <div class="mb-3">
+        <label for="ticks-per-rev" class="form-label">Encoder ticks per revolution</label>
+        <input type="number" id="ticks-per-rev" name="ticks-per-rev" class="form-control" min="1" required>
+    </div>
+    <div class="mb-3">
+        <label for="home-position" class="form-label">Home position <span class="text-body-secondary">(degrees from North, positive clockwise)</span></label>
+        <input type="number" id="home-position" name="home-position" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label for="park-position" class="form-label">Park position <span class="text-body-secondary">(degrees from North, positive clockwise)</span></label>
+        <input type="number" id="park-position" name="park-position" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label for="shutter-timeout" class="form-label">Shutter timeout <span class="text-body-secondary">(seconds)</span></label>
+        <input type="number" id="shutter-timeout" name="shutter-timeout" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+</form>
+{{end}}
+
+{{template "header"}}
+<div class="container">
+    <main>
+        <div class="py-5 text-center">
+            <h1>Dome Setup</h1>
+        </div>
+        <div class="container" style="max-width: 500px;">
+            <div class="col-md-4"></div>
+                {{template "domeSettings"}}
+            </div>
+        </div>
+    </main>
+</div>
+{{template "footer"}}

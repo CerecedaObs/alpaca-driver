@@ -66,6 +66,7 @@ func (h *DeviceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /driverversion", h.handleDriverVersion)
 	mux.HandleFunc("GET /interfaceversion", h.handleInterfaceVersion)
 	mux.HandleFunc("GET /devicestate", h.handleState)
+	mux.HandleFunc("GET /supportedactions", h.handleSupportedActions)
 
 	mux.HandleFunc("/connected", h.handleConnected)
 	mux.HandleFunc("GET /connecting", h.handleConnecting)
@@ -97,6 +98,10 @@ func (h *DeviceHandler) handleState(w http.ResponseWriter, r *http.Request) {
 	handleResponse(w, r, h.dev.GetState())
 }
 
+func (h *DeviceHandler) handleSupportedActions(w http.ResponseWriter, r *http.Request) {
+	handleResponse(w, r, []string{})
+}
+
 func (h *DeviceHandler) handleConnected(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "PUT":
@@ -117,6 +122,7 @@ func (h *DeviceHandler) handleConnected(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
+		handleResponse(w, r, connected)
 	case "GET":
 		handleResponse(w, r, h.dev.Connected())
 	default:

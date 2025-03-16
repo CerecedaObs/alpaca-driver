@@ -8,9 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Global transaction counter
@@ -32,27 +31,37 @@ func parseBodyParams(r *http.Request) (url.Values, error) {
 	}
 	// Reset the body so it can be read again later.
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-	log.Debugf("Request body: %s", string(bodyBytes))
 	return url.ParseQuery(string(bodyBytes))
 }
 
 // getClientTxID obtains the client transaction ID from the request body.
-func getClientTxID(r *http.Request) (int, error) {
-	params := r.URL.Query()
+func getClientTxID(params url.Values) (int, error) {
+	for param, value := range params {
+		if strings.ToLower(param) == "clienttransactionid" {
+			id, _ := strconv.Atoi(value[0])
+			if id < 0 {
+				return 0, errors.New("ClientTransactionID must be non-negative")
+			}
+			return id, nil
+		}
+	}
+	return 0, errors.New("missing ClientTransactionID")
+}
 
-	clientTxID := params.Get("ClientTransactionID")
-	if clientTxID == "" {
-		return 0, errors.New("missing ClientTransactionID")
+// getClientID obtains the client ID from the request body.
+func getClientID(params url.Values) (string, error) {
+	for param, value := range params {
+		if strings.ToLower(param) == "clientid" {
+			return value[0], nil
+		}
 	}
-	id, _ := strconv.Atoi(clientTxID)
-	if id < 0 {
-		return 0, errors.New("ClientTransactionID must be non-negative")
-	}
-	return id, nil
+	return "", errors.New("missing ClientID")
 }
 
 func handleResponse(w http.ResponseWriter, r *http.Request, value any) {
-	txID, err := getClientTxID(r)
+	params := r.URL.Query()
+
+	txID, err := getClientTxID(params)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -70,9 +79,11 @@ func handleResponse(w http.ResponseWriter, r *http.Request, value any) {
 }
 
 func handleError(w http.ResponseWriter, r *http.Request, code int, message string) {
-	txID, err := getClientTxID(r)
+	params := r.URL.Query()
+
+	txID, err := getClientTxID(params)
 	if err != nil {
-		http.Error(w, "missing or bad ClientTransactionID", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -92,11 +103,13 @@ func parseRequest(r *http.Request, field string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	value := params.Get(field)
-	if value == "" {
-		return "", errors.New("missing field")
+
+	for param, value := range params {
+		if strings.EqualFold(param, field) {
+			return value[0], nil
+		}
 	}
-	return value, nil
+	return "", errors.New("missing field")
 }
 
 func parseBoolRequest(r *http.Request, field string) (bool, error) {

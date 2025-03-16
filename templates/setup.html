@@ -1,0 +1,39 @@
+{{define "driverSettings"}}
+<form action="/submit" method="post"></form>
+    <div class="section">
+        <h4>MQTT Settings</h4>
+        <div class="mb-3">
+            <label for="broker" class="form-label">Broker:</label>
+            <input type="text" id="broker" name="broker" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="port" class="form-label">Port:</label>
+            <input type="number" id="port" name="port" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="username" class="form-label">Username:</label>
+            <input type="text" id="username" name="username" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="password" class="form-label">Password:</label>
+            <input type="password" id="password" name="password" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+</form>
+{{end}}
+
+{{template "header"}}
+<div class="container">
+    <main>
+        <div class="py-5 text-center">
+            <h1>ZRO Driver Setup</h1>
+        </div>
+        <div class="container" style="max-width: 500px;">
+            <div class="col-md-4"></div>
+                {{template "driverSettings"}}
+            </div>
+        </div>
+    </main>
+</div>
+{{template "footer"}}
