@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +16,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const templateDir = "templates"
+
 func main() {
 	port := flag.Uint("port", 8080, "Port to listen on")
 	flag.Parse()
@@ -22,7 +25,12 @@ func main() {
 	log.SetLevel(log.DebugLevel)
 	log.Info("ZRO Alpaca Server")
 
-	dome := simulators.NewDomeSimulator(0)
+	tmpl, err := template.ParseGlob(templateDir + "/*.html")
+	if err != nil {
+		log.Fatalf("Error loading setup template: %v", err)
+	}
+
+	dome := simulators.NewDomeSimulator(0, tmpl, log.WithField("device", "dome"))
 
 	server := alpaca.NewServer(
 		alpaca.ServerDescription{
@@ -34,6 +42,7 @@ func main() {
 		[]alpaca.Device{
 			dome,
 		},
+		tmpl,
 	)
 
 	mux := server.AddRoutes()

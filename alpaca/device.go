@@ -52,6 +52,8 @@ type Device interface {
 	Connecting() bool
 	Connect() error
 	Disconnect() error
+
+	HandleSetup(http.ResponseWriter, *http.Request)
 }
 
 type DeviceHandler struct {
@@ -72,6 +74,8 @@ func (h *DeviceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /connecting", h.handleConnecting)
 	mux.HandleFunc("PUT /connect", h.handleConnect)
 	mux.HandleFunc("PUT /disconnect", h.handleDisconnect)
+
+	mux.HandleFunc("/setup", h.dev.HandleSetup)
 }
 
 func (h *DeviceHandler) handleName(w http.ResponseWriter, r *http.Request) {
