@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Global transaction counter
@@ -37,10 +35,13 @@ func parseBodyParams(r *http.Request) (url.Values, error) {
 }
 
 // getClientTxID obtains the client transaction ID from the request body.
-func getClientTxID(params url.Values, caseSensitive bool) (int, error) {
+func getClientTxID(params url.Values, path string) (int, error) {
+	if strings.HasPrefix(path, "/management") {
+		return 0, nil
+	}
+
 	for param, value := range params {
-		if caseSensitive && param == "ClientTransactionID" ||
-			!caseSensitive && strings.ToLower(param) == "clienttransactionid" {
+		if strings.ToLower(param) == "clienttransactionid" {
 			id, _ := strconv.Atoi(value[0])
 			if id < 0 {
 				return 0, errors.New("ClientTransactionID must be non-negative")
@@ -49,16 +50,7 @@ func getClientTxID(params url.Values, caseSensitive bool) (int, error) {
 		}
 	}
 	return 0, errors.New("missing ClientTransactionID")
-}
-
-// getClientID obtains the client ID from the request body.
-func getClientID(params url.Values) (string, error) {
-	for param, value := range params {
-		if strings.ToLower(param) == "clientid" {
-			return value[0], nil
-		}
-	}
-	return "", errors.New("missing ClientID")
+	// return 0, nil
 }
 
 func handleResponse(w http.ResponseWriter, r *http.Request, value any) {
@@ -73,9 +65,8 @@ func handleResponse(w http.ResponseWriter, r *http.Request, value any) {
 		params = r.URL.Query()
 	}
 
-	txID, err := getClientTxID(params, false)
+	txID, err := getClientTxID(params, r.URL.Path)
 	if err != nil {
-		log.Errorf("Error parsing request %s wit params %v: %v", r.URL.Path, params, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -94,7 +85,7 @@ func handleResponse(w http.ResponseWriter, r *http.Request, value any) {
 func handleError(w http.ResponseWriter, r *http.Request, code int, message string) {
 	params := r.URL.Query()
 
-	txID, err := getClientTxID(params, false)
+	txID, err := getClientTxID(params, r.URL.Path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

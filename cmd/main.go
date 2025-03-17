@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 )
 
 func main() {
-	port := flag.Uint("port", 8080, "Port to listen on")
+	port := flag.Int("port", 8080, "Port to listen on")
 	flag.Parse()
 
 	log.SetLevel(log.DebugLevel)
@@ -59,26 +60,50 @@ func main() {
 	}
 
 	// Channel to listen for interrupt or terminate signals
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	// stop := make(chan os.Signal, 1)
+	// signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
+	var wg sync.WaitGroup
+
+	wg.Add(1)
 	go func() {
 		log.Debug("Server started")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Could not listen on %s: %v\n", srv.Addr, err)
 		}
+		wg.Done()
+		log.Debug("Server stopped")
 	}()
 
-	<-stop // Wait for interrupt signal
+	// Create discovery responder
+	discoveryLogger := log.WithField("component", "discovery")
+	dr, err := alpaca.NewDiscoveryResponder("0.0.0.0", *port, discoveryLogger)
+	if err != nil {
+		log.Fatalf("Failed to start discovery responder: %v", err)
+	}
+
+	wg.Add(1)
+	go func() {
+		if err := dr.Run(ctx); err != nil {
+			log.Fatalf("Discovery responder failed: %v", err)
+		}
+		wg.Done()
+		log.Debug("Discovery responder stopped")
+	}()
+
+	<-ctx.Done()
 
 	log.Info("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(ctx2); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
+	wg.Wait()
 	log.Info("Server stopped")
 }
