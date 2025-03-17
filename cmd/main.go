@@ -3,10 +3,10 @@ package main
 import (
 	"alpaca/alpaca"
 	"alpaca/alpaca/simulators"
+	"alpaca/templates"
 	"context"
 	"flag"
 	"fmt"
-	"html/template"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,8 +17,6 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-const templateDir = "templates"
-
 func main() {
 	port := flag.Uint("port", 8080, "Port to listen on")
 	flag.Parse()
@@ -26,7 +24,7 @@ func main() {
 	log.SetLevel(log.DebugLevel)
 	log.Info("ZRO Alpaca Server")
 
-	tmpl, err := template.ParseGlob(templateDir + "/*.html")
+	tmpl, err := templates.LoadTemplates()
 	if err != nil {
 		log.Fatalf("Error loading setup template: %v", err)
 	}
