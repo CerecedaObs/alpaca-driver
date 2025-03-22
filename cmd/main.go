@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", 8080, "Port to listen on")
+	port := flag.Int("port", 8090, "Port to listen on")
 	flag.Parse()
 
 	log.SetLevel(log.DebugLevel)

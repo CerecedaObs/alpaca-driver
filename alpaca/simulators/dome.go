@@ -1,11 +1,11 @@
-// Documentation: https://ascom-standards.org/api/?urls.primaryName=ASCOM+Alpaca+Management+API
-
 package simulators
 
 import (
 	"alpaca/alpaca"
+	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -24,7 +24,8 @@ const (
 type DomeSimulator struct {
 	logger log.FieldLogger
 	tmpl   *template.Template
-	db     *bolt.DB
+	store  *store
+	config DomeConfig
 
 	info         alpaca.DeviceInfo
 	driver       alpaca.DriverInfo
@@ -36,10 +37,21 @@ type DomeSimulator struct {
 }
 
 func NewDomeSimulator(number int, db *bolt.DB, tmpl *template.Template, logger log.FieldLogger) *DomeSimulator {
+	store, err := NewStore(db)
+	if err != nil {
+		logger.Fatalf("Error creating store: %v", err)
+	}
+
+	config, err := store.GetDomeConfig()
+	if err != nil {
+		logger.Fatalf("Error getting dome config: %v", err)
+	}
+
 	return &DomeSimulator{
 		logger: logger,
 		tmpl:   tmpl,
-		db:     db,
+		store:  store,
+		config: config,
 
 		info: alpaca.DeviceInfo{
 			Name:     deviceName,
@@ -55,7 +67,7 @@ func NewDomeSimulator(number int, db *bolt.DB, tmpl *template.Template, logger l
 		capabilities: alpaca.DomeCapabilities{
 			CanFindHome:    true,
 			CanPark:        true,
-			CanSetAltitude: true,
+			CanSetAltitude: false,
 			CanSetAzimuth:  true,
 			CanSetPark:     true,
 			CanSetShutter:  true,
@@ -141,6 +153,9 @@ func (d *DomeSimulator) SlewToAltitude(altitude float64) error {
 func (d *DomeSimulator) SlewToAzimuth(azimuth float64) error {
 	d.logger.Infof("Slewing to azimuth: %f", azimuth)
 	d.status.Azimuth = azimuth
+	d.status.Slewing = false
+	d.status.AtPark = false
+	d.status.AtHome = false
 	return nil
 }
 
@@ -152,6 +167,7 @@ func (d *DomeSimulator) SyncToAzimuth(azimuth float64) error {
 
 func (d *DomeSimulator) AbortSlew() error {
 	d.logger.Info("Aborting slew")
+	d.status.Slewing = false
 	return nil
 }
 
@@ -159,6 +175,8 @@ func (d *DomeSimulator) FindHome() error {
 	d.logger.Info("Finding home")
 	d.status.AtHome = true
 	d.status.AtPark = false
+	d.status.Slewing = false
+	d.status.Azimuth = float64(d.config.HomePosition)
 	return nil
 }
 
@@ -166,6 +184,8 @@ func (d *DomeSimulator) Park() error {
 	d.logger.Info("Parking")
 	d.status.AtHome = false
 	d.status.AtPark = true
+	d.status.Slewing = false
+	d.status.Azimuth = float64(d.config.ParkPosition)
 	return nil
 }
 
@@ -188,15 +208,84 @@ func (d *DomeSimulator) SetShutter(cmd alpaca.ShutterCommand) error {
 }
 
 func (d *DomeSimulator) HandleSetup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := d.store.GetDomeConfig()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		d.renderSetupForm(w, cfg, false, "")
 
-	// Use the pre-parsed template
-	err := d.tmpl.ExecuteTemplate(w, "dome_setup.html", d)
-	if err != nil {
+	case http.MethodPost:
+		cfg, err := parseDomeSetupForm(r)
+		if err != nil {
+			d.renderSetupForm(w, cfg, false, err.Error())
+			return
+		}
+
+		d.logger.Infof("Setting dome config: %+v", cfg)
+		d.config = cfg
+		if err := d.store.SetDomeConfig(cfg); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		d.renderSetupForm(w, cfg, true, "")
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (d *DomeSimulator) renderSetupForm(w http.ResponseWriter, cfg DomeConfig, success bool, err string) {
+	data := struct {
+		DomeConfig
+		Success bool
+		Error   string
+	}{cfg, success, err}
+
+	if err := d.tmpl.ExecuteTemplate(w, "dome_setup.html", data); err != nil {
 		http.Error(w, "Error rendering template", http.StatusInternalServerError)
 		d.logger.Errorf("Error rendering template: %v", err)
 	}
+}
+
+func parseDomeSetupForm(r *http.Request) (DomeConfig, error) {
+	if err := r.ParseForm(); err != nil {
+		return DomeConfig{}, fmt.Errorf("error parsing form: %v", err)
+	}
+
+	homePosition, err := getFormUint(r, "home-position")
+	if err != nil {
+		return DomeConfig{}, err
+	}
+	parkPosition, err := getFormUint(r, "park-position")
+	if err != nil {
+		return DomeConfig{}, err
+	}
+	shutterTimeout, err := getFormUint(r, "shutter-timeout")
+	if err != nil {
+		return DomeConfig{}, err
+	}
+	ticksPerRevolution, err := getFormUint(r, "ticks-per-rev")
+	if err != nil {
+		return DomeConfig{}, err
+	}
+
+	return DomeConfig{
+		HomePosition:   homePosition,
+		ParkPosition:   parkPosition,
+		ShutterTimeout: shutterTimeout,
+		TicksPerRev:    ticksPerRevolution,
+	}, nil
+}
+
+func getFormUint(r *http.Request, key string) (uint, error) {
+	value := r.FormValue(key)
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %v", key, err)
+	}
+	return uint(intValue), nil
 }

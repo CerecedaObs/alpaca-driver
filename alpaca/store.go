@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	bucket          = "common"
+	bucket          = "alpaca"
 	defaultMQTTHost = "localhost"
 	defaultMQTTPort = 1883
 
-	mqttKey = "mqtt_config"
+	mqttConfigKey = "mqtt_config"
 )
 
 type MQTTConfig struct {
@@ -66,7 +66,7 @@ func (s *store) SetMQTTConfig(cfg MQTTConfig) error {
 		}
 
 		value, _ := json.Marshal(cfg)
-		return b.Put([]byte(mqttKey), value)
+		return b.Put([]byte(mqttConfigKey), value)
 	})
 }
 
@@ -80,7 +80,7 @@ func (s *store) GetMQTTConfig() (MQTTConfig, error) {
 			return fmt.Errorf("bucket %s not found", bucket)
 		}
 
-		value := b.Get([]byte(mqttKey))
+		value := b.Get([]byte(mqttConfigKey))
 		if value == nil {
 			return fmt.Errorf("key config not found")
 		}

@@ -2,21 +2,32 @@
 <form action="" method="post">
     <div class="mb-3">
         <label for="ticks-per-rev" class="form-label">Encoder ticks per revolution</label>
-        <input type="number" id="ticks-per-rev" name="ticks-per-rev" class="form-control" min="1" required>
+        <input type="number" id="ticks-per-rev" name="ticks-per-rev" class="form-control" min="1" required value="{{.TicksPerRev}}">
     </div>
     <div class="mb-3">
         <label for="home-position" class="form-label">Home position <span class="text-body-secondary">(degrees from North, positive clockwise)</span></label>
-        <input type="number" id="home-position" name="home-position" class="form-control" required>
+        <input type="number" id="home-position" name="home-position" class="form-control" required value="{{.HomePosition}}">
     </div>
     <div class="mb-3">
         <label for="park-position" class="form-label">Park position <span class="text-body-secondary">(degrees from North, positive clockwise)</span></label>
-        <input type="number" id="park-position" name="park-position" class="form-control" required>
+        <input type="number" id="park-position" name="park-position" class="form-control" required value="{{.ParkPosition}}">
     </div>
     <div class="mb-3">
         <label for="shutter-timeout" class="form-label">Shutter timeout <span class="text-body-secondary">(seconds)</span></label>
-        <input type="number" id="shutter-timeout" name="shutter-timeout" class="form-control" required>
+        <input type="number" id="shutter-timeout" name="shutter-timeout" class="form-control" required value="{{.ShutterTimeout}}">
     </div>
     <button type="submit" class="btn btn-primary">Save</button>
+
+    {{if .Success}}
+    <div class="alert alert-success mt-3" role="alert">
+        Settings saved successfully.
+    </div>
+    {{end}}
+    {{if .Error}}
+    <div class="alert alert-danger mt-3" role="alert">
+        {{.Error}}
+    </div>
+    {{end}}
 </form>
 {{end}}
 
