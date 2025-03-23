@@ -140,7 +140,7 @@ func (dh *DomeHandler) handleStatus(r *http.Request) (any, error) {
 	case "slaved":
 		return status.Slaved, nil
 	default:
-		return nil, ErrBadRequest
+		return nil, errBadRequest
 	}
 }
 
@@ -166,14 +166,14 @@ func (dh *DomeHandler) handleCapabilities(r *http.Request) (any, error) {
 	case "cansyncazimuth":
 		return cap.CanSyncAzimuth, nil
 	default:
-		return nil, ErrBadRequest
+		return nil, errBadRequest
 	}
 }
 
 func (dh *DomeHandler) handleSlaved(r *http.Request) (any, error) {
-	slaved, err := parseBoolRequest(r, "Slaved")
+	slaved, err := getBoolParam(r, "Slaved")
 	if err != nil {
-		return nil, ErrBadRequest
+		return nil, errBadRequest
 	}
 
 	if err := dh.dev.SetSlaved(slaved); err != nil {
@@ -183,9 +183,9 @@ func (dh *DomeHandler) handleSlaved(r *http.Request) (any, error) {
 }
 
 func (dh *DomeHandler) handleSlewToAltitude(r *http.Request) (any, error) {
-	altitude, err := parseFloatRequest(r, "Altitude")
+	altitude, err := getFloatParam(r, "Altitude")
 	if err != nil {
-		return nil, ErrBadRequest
+		return nil, errBadRequest
 	}
 
 	if err := dh.dev.SlewToAltitude(altitude); err != nil {
@@ -195,18 +195,18 @@ func (dh *DomeHandler) handleSlewToAltitude(r *http.Request) (any, error) {
 }
 
 func (dh *DomeHandler) handleSlewToAzimuth(r *http.Request) (any, error) {
-	azimuth, err := parseFloatRequest(r, "Azimuth")
+	azimuth, err := getFloatParam(r, "Azimuth")
 	if err != nil {
-		return nil, ErrBadRequest
+		return nil, errBadRequest
 	}
 
 	return nil, dh.dev.SlewToAzimuth(azimuth)
 }
 
 func (dh *DomeHandler) handleSyncToAzimuth(r *http.Request) (any, error) {
-	azimuth, err := parseFloatRequest(r, "Azimuth")
+	azimuth, err := getFloatParam(r, "Azimuth")
 	if err != nil {
-		return nil, ErrBadRequest
+		return nil, errBadRequest
 	}
 
 	return nil, dh.dev.SyncToAzimuth(azimuth)

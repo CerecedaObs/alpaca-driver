@@ -98,9 +98,9 @@ func (h *DeviceHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *DeviceHandler) putConnected(r *http.Request) (any, error) {
-	connected, err := parseBoolRequest(r, "Connected")
+	connected, err := getBoolParam(r, "Connected")
 	if err != nil {
-		return nil, ErrBadRequest
+		return nil, errBadRequest
 	}
 
 	if connected {

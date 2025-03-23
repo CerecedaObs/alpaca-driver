@@ -2,8 +2,10 @@ package alpaca
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,7 +14,10 @@ import (
 	"sync/atomic"
 )
 
-var ErrBadRequest = errors.New("bad request")
+var (
+	errBadRequest = errors.New("bad request")
+	errInternal   = errors.New("internal error")
+)
 
 // Global transaction counter
 var txCounter atomic.Int32
@@ -25,35 +30,10 @@ type baseResponse struct {
 	Value               any    `json:"Value,omitempty"`
 }
 
-// Helper to read and parse the request body as URL-encoded data.
-func parseBodyParams(r *http.Request) (url.Values, error) {
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		return nil, err
-	}
-	// Reset the body so it can be read again later.
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-	return url.ParseQuery(string(bodyBytes))
-}
+// Define a custom type for context keys
+type contextKey string
 
-// getClientTxID obtains the client transaction ID from the request body.
-func getClientTxID(params url.Values, path string) (int, error) {
-	if strings.HasPrefix(path, "/management") {
-		return 0, nil
-	}
-
-	for param, value := range params {
-		if strings.ToLower(param) == "clienttransactionid" {
-			id, _ := strconv.Atoi(value[0])
-			if id < 0 {
-				return 0, errors.New("ClientTransactionID must be non-negative")
-			}
-			return id, nil
-		}
-	}
-	return 0, errors.New("missing ClientTransactionID")
-	// return 0, nil
-}
+const paramsKey contextKey = "params"
 
 // handleMgm wraps a management handler function and returns an http.Handler.
 // Management handlers do not require a ClientTransactionID.
@@ -63,6 +43,7 @@ func handleMgm(handler func(r *http.Request) (any, error)) http.Handler {
 
 		value, err := handler(r)
 		if err != nil {
+			// TODO: Define error numbers
 			response.ErrorNumber = 1
 			response.ErrorMessage = err.Error()
 		} else {
@@ -80,18 +61,9 @@ func handleMgm(handler func(r *http.Request) (any, error)) http.Handler {
 // If the error is nil, the value will be returned as an Alpaca response.
 func handleAPI(handler func(r *http.Request) (any, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var params url.Values
+		r = addParamsToRequestContext(r)
 
-		if r.Method == "PUT" {
-			// PUT requests have the parameters in the body.
-			params, _ = parseBodyParams(r)
-
-		} else {
-			// GET requests have the parameters in the URL.
-			params = r.URL.Query()
-		}
-
-		txID, err := getClientTxID(params, r.URL.Path)
+		txID, err := getUintParam(r, "ClientTransactionID", true)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -99,14 +71,18 @@ func handleAPI(handler func(r *http.Request) (any, error)) http.Handler {
 
 		response := baseResponse{
 			ServerTransactionID: int(txCounter.Add(1)),
-			ClientTransactionID: txID,
+			ClientTransactionID: int(txID),
 		}
 
 		value, err := handler(r)
-		if err == ErrBadRequest {
+		if errors.Is(err, errBadRequest) {
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
+		} else if errors.Is(err, errInternal) {
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
 		} else if err != nil {
+			// TODO: Define error numbers
 			response.ErrorNumber = 1
 			response.ErrorMessage = err.Error()
 		} else {
@@ -118,32 +94,89 @@ func handleAPI(handler func(r *http.Request) (any, error)) http.Handler {
 	})
 }
 
-// parseRequest now reads the field from the request body.
-func parseRequest(r *http.Request, field string) (string, error) {
-	params, err := parseBodyParams(r)
-	if err != nil {
-		return "", err
+// addParamsToRequestContext extracts the parameters from the request and adds
+// them to the request context.
+// PUT requests have the parameters in the body.
+// GET requests have the parameters in the URL.
+func addParamsToRequestContext(r *http.Request) *http.Request {
+	var params url.Values
+
+	if r.Method == "PUT" {
+		params, _ = parseBodyParams(r)
+
+	} else {
+		params = r.URL.Query()
 	}
 
-	value, ok := params[field]
-	if !ok {
-		return "", errors.New("missing field")
-	}
-	return value[0], nil
+	// Insert the params into the request context
+	ctx := context.WithValue(r.Context(), paramsKey, params)
+
+	return r.WithContext(ctx)
 }
 
-func parseBoolRequest(r *http.Request, field string) (bool, error) {
-	value, err := parseRequest(r, field)
+// Helper to read and parse the request body as URL-encoded data.
+func parseBodyParams(r *http.Request) (url.Values, error) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	// Reset the body so it can be read again later.
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	return url.ParseQuery(string(bodyBytes))
+}
+
+// getParam now reads the field from the request body.
+func getParam(r *http.Request, field string, anyCase bool) (string, error) {
+	params, ok := r.Context().Value(paramsKey).(url.Values)
+	if !ok {
+		return "", fmt.Errorf("%w: missing params", errBadRequest)
+	}
+
+	if !anyCase {
+		param, ok := params[field]
+		if ok {
+			return param[0], nil
+		}
+		return "", fmt.Errorf("%w: missing field %s", errBadRequest, field)
+	}
+
+	for param, value := range params {
+		if anyCase && strings.EqualFold(param, field) {
+			return value[0], nil
+		}
+	}
+	return "", fmt.Errorf("%w: missing field %s", errBadRequest, field)
+}
+
+func getBoolParam(r *http.Request, field string) (bool, error) {
+	value, err := getParam(r, field, false)
 	if err != nil {
 		return false, err
 	}
 	return strconv.ParseBool(value)
 }
 
-func parseFloatRequest(r *http.Request, field string) (float64, error) {
-	value, err := parseRequest(r, field)
+func getFloatParam(r *http.Request, field string) (float64, error) {
+	value, err := getParam(r, field, false)
 	if err != nil {
 		return 0, err
 	}
 	return strconv.ParseFloat(value, 64)
+}
+
+func getIntParam(r *http.Request, field string) (int, error) {
+	value, err := getParam(r, field, false)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(value)
+}
+
+func getUintParam(r *http.Request, field string, anyCase bool) (uint, error) {
+	value, err := getParam(r, field, anyCase)
+	if err != nil {
+		return 0, err
+	}
+	i, err := strconv.ParseUint(value, 10, 32)
+	return uint(i), err
 }
