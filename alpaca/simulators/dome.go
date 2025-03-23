@@ -178,12 +178,7 @@ func (d *DomeSimulator) SetSlaved(slaved bool) error {
 }
 
 func (d *DomeSimulator) SlewToAltitude(altitude float64) error {
-	if !d.connected {
-		return errNotConnected
-	}
-	d.logger.Infof("Slewing to altitude: %f", altitude)
-	d.status.Altitude = altitude
-	return nil
+	return fmt.Errorf("altitude slewing not supported")
 }
 
 func (d *DomeSimulator) SlewToAzimuth(azimuth float64) error {

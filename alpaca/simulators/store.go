@@ -11,9 +11,9 @@ import (
 const (
 	bucket                = "alpaca"
 	defaultHomePosition   = 0
-	defaultParkPosition   = 0
+	defaultParkPosition   = 90
 	defaultShutterTimeout = 60
-	defaultTicksPerRev    = 1000
+	defaultTicksPerRev    = 1470
 
 	domeConfigKey = "dome_config"
 )

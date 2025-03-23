@@ -1,6 +1,7 @@
 package alpaca
 
 import (
+	"fmt"
 	"net/http"
 )
 
@@ -191,7 +192,7 @@ func (dh *DomeHandler) handleSlewToAltitude(r *http.Request) (any, error) {
 	if err := dh.dev.SlewToAltitude(altitude); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	return true, nil
 }
 
 func (dh *DomeHandler) handleSlewToAzimuth(r *http.Request) (any, error) {
@@ -199,8 +200,11 @@ func (dh *DomeHandler) handleSlewToAzimuth(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, errBadRequest
 	}
+	if azimuth < 0 || azimuth > 360 {
+		return false, fmt.Errorf("invalid azimuth: %f", azimuth)
+	}
 
-	return nil, dh.dev.SlewToAzimuth(azimuth)
+	return true, dh.dev.SlewToAzimuth(azimuth)
 }
 
 func (dh *DomeHandler) handleSyncToAzimuth(r *http.Request) (any, error) {
@@ -208,30 +212,33 @@ func (dh *DomeHandler) handleSyncToAzimuth(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, errBadRequest
 	}
+	if azimuth < 0 || azimuth > 360 {
+		return false, fmt.Errorf("invalid azimuth: %f", azimuth)
+	}
 
-	return nil, dh.dev.SyncToAzimuth(azimuth)
+	return true, dh.dev.SyncToAzimuth(azimuth)
 }
 
 func (dh *DomeHandler) handleAbortSlew(r *http.Request) (any, error) {
-	return nil, dh.dev.AbortSlew()
+	return true, dh.dev.AbortSlew()
 }
 
 func (dh *DomeHandler) handleFindHome(r *http.Request) (any, error) {
-	return nil, dh.dev.FindHome()
+	return true, dh.dev.FindHome()
 }
 
 func (dh *DomeHandler) handlePark(r *http.Request) (any, error) {
-	return nil, dh.dev.Park()
+	return true, dh.dev.Park()
 }
 
 func (dh *DomeHandler) handleSetPark(r *http.Request) (any, error) {
-	return nil, dh.dev.SetPark()
+	return true, dh.dev.SetPark()
 }
 
 func (dh *DomeHandler) handleOpenShutter(r *http.Request) (any, error) {
-	return nil, dh.dev.SetShutter(ShutterCommandOpen)
+	return true, dh.dev.SetShutter(ShutterCommandOpen)
 }
 
 func (dh *DomeHandler) handleCloseShutter(r *http.Request) (any, error) {
-	return nil, dh.dev.SetShutter(ShutterCommandClose)
+	return true, dh.dev.SetShutter(ShutterCommandClose)
 }
