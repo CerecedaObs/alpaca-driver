@@ -1,7 +1,6 @@
 package alpaca
 
 import (
-	"fmt"
 	"net/http"
 )
 
@@ -201,7 +200,7 @@ func (dh *DomeHandler) handleSlewToAzimuth(r *http.Request) (any, error) {
 		return nil, errBadRequest
 	}
 	if azimuth < 0 || azimuth > 360 {
-		return false, fmt.Errorf("invalid azimuth: %f", azimuth)
+		return false, ErrInvalidValue
 	}
 
 	return true, dh.dev.SlewToAzimuth(azimuth)
@@ -213,7 +212,7 @@ func (dh *DomeHandler) handleSyncToAzimuth(r *http.Request) (any, error) {
 		return nil, errBadRequest
 	}
 	if azimuth < 0 || azimuth > 360 {
-		return false, fmt.Errorf("invalid azimuth: %f", azimuth)
+		return false, ErrInvalidValue
 	}
 
 	return true, dh.dev.SyncToAzimuth(azimuth)

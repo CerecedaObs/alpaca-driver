@@ -20,11 +20,6 @@ const (
 	driverVersion = "1.0"
 )
 
-var (
-	errNotConnected     = fmt.Errorf("dome not connected")
-	errAlreadyConnected = fmt.Errorf("dome already connected")
-)
-
 // DomeSimulator implements the alpaca.Dome interface
 type DomeSimulator struct {
 	logger log.FieldLogger
@@ -130,7 +125,7 @@ func (d *DomeSimulator) Status() alpaca.DomeStatus {
 
 func (d *DomeSimulator) Connect() error {
 	if d.connected {
-		return errAlreadyConnected
+		return nil
 	}
 
 	// d.connecting = true
@@ -170,7 +165,7 @@ func (d *DomeSimulator) Connecting() bool {
 
 func (d *DomeSimulator) SetSlaved(slaved bool) error {
 	if !d.connected {
-		return errNotConnected
+		return alpaca.ErrNotConnected
 	}
 	d.logger.Infof("Dome slaved: %v", slaved)
 	d.status.Slaved = slaved
@@ -178,12 +173,12 @@ func (d *DomeSimulator) SetSlaved(slaved bool) error {
 }
 
 func (d *DomeSimulator) SlewToAltitude(altitude float64) error {
-	return fmt.Errorf("altitude slewing not supported")
+	return alpaca.ErrPropertyNotImplemented
 }
 
 func (d *DomeSimulator) SlewToAzimuth(azimuth float64) error {
 	if !d.connected {
-		return errNotConnected
+		return alpaca.ErrNotConnected
 	}
 	d.logger.Infof("Slewing to azimuth: %f", azimuth)
 	d.status.Azimuth = azimuth
@@ -199,7 +194,7 @@ func (d *DomeSimulator) SlewToAzimuth(azimuth float64) error {
 
 func (d *DomeSimulator) SyncToAzimuth(azimuth float64) error {
 	if !d.connected {
-		return errNotConnected
+		return alpaca.ErrNotConnected
 	}
 	d.logger.Infof("Syncing to azimuth: %f", azimuth)
 	d.status.Azimuth = azimuth
@@ -208,7 +203,7 @@ func (d *DomeSimulator) SyncToAzimuth(azimuth float64) error {
 
 func (d *DomeSimulator) AbortSlew() error {
 	if !d.connected {
-		return errNotConnected
+		return alpaca.ErrNotConnected
 	}
 	d.logger.Info("Aborting slew")
 	d.status.Slewing = false
@@ -217,7 +212,7 @@ func (d *DomeSimulator) AbortSlew() error {
 
 func (d *DomeSimulator) FindHome() error {
 	if !d.connected {
-		return errNotConnected
+		return alpaca.ErrNotConnected
 	}
 	d.logger.Info("Finding home")
 	d.status.AtHome = true
@@ -233,7 +228,7 @@ func (d *DomeSimulator) Park() error {
 
 func (d *DomeSimulator) SetPark() error {
 	if !d.connected {
-		return errNotConnected
+		return alpaca.ErrNotConnected
 	}
 	d.logger.Info("Setting park position")
 	d.config.ParkPosition = uint(d.status.Azimuth)
@@ -244,7 +239,7 @@ func (d *DomeSimulator) SetPark() error {
 
 func (d *DomeSimulator) SetShutter(cmd alpaca.ShutterCommand) error {
 	if !d.connected {
-		return errNotConnected
+		return alpaca.ErrNotConnected
 	}
 	d.logger.Infof("Setting shutter: %v", cmd)
 	switch cmd {

@@ -14,9 +14,32 @@ import (
 	"sync/atomic"
 )
 
+type Error struct {
+	Number  int
+	Message string
+}
+
+func (e Error) Error() string {
+	return e.Message
+}
+
+func NewError(number int, message string) Error {
+	return Error{Number: number, Message: message}
+}
+
+var errBadRequest = errors.New("bad request")
+
+// Common Alpaca errors.
+// Reference: https://ascom-standards.org/AlpacaDeveloper/ASCOMAlpacaAPIReference.html
 var (
-	errBadRequest = errors.New("bad request")
-	errInternal   = errors.New("internal error")
+	ErrPropertyNotImplemented = Error{Number: 0x400, Message: "property not implemented"}
+	ErrInvalidValue           = Error{Number: 0x401, Message: "invalid value"}
+	ErrNotSet                 = Error{Number: 0x402, Message: "not set"}
+	ErrNotConnected           = Error{Number: 0x403, Message: "not connected"}
+	ErrInvalidWhileParked     = Error{Number: 0x404, Message: "invalid while parked"}
+	ErrInvalidWhileSlaved     = Error{Number: 0x405, Message: "invalid while slaved"}
+	ErrInvalidOperation       = Error{Number: 0x406, Message: "invalid operation"}
+	ErrActionNotImplemented   = Error{Number: 0x407, Message: "action not implemented"}
 )
 
 // Global transaction counter
@@ -75,16 +98,16 @@ func handleAPI(handler func(r *http.Request) (any, error)) http.Handler {
 		}
 
 		value, err := handler(r)
-		if errors.Is(err, errBadRequest) {
+
+		if e, ok := err.(Error); ok {
+			response.ErrorNumber = e.Number
+			response.ErrorMessage = e.Message
+		} else if errors.Is(err, errBadRequest) {
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
-		} else if errors.Is(err, errInternal) {
+		} else if err != nil {
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 			return
-		} else if err != nil {
-			// TODO: Define error numbers
-			response.ErrorNumber = 1
-			response.ErrorMessage = err.Error()
 		} else {
 			response.Value = value
 		}
