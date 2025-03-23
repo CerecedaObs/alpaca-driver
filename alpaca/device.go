@@ -69,7 +69,7 @@ func (h *DeviceHandler) RegisterRoutes(mux *http.ServeMux) {
 		return h.dev.DeviceInfo().Description, nil
 	}))
 	mux.Handle("GET /driverinfo", handleAPI(func(r *http.Request) (any, error) {
-		return h.dev.DriverInfo(), nil
+		return h.dev.DriverInfo().Name, nil
 	}))
 	mux.Handle("GET /driverversion", handleAPI(func(r *http.Request) (any, error) {
 		return h.dev.DriverInfo().Version, nil
