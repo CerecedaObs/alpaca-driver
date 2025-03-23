@@ -62,94 +62,63 @@ type DeviceHandler struct {
 
 func (h *DeviceHandler) RegisterRoutes(mux *http.ServeMux) {
 	// mux.HandleFunc("GET /setup", h.handleSetup)
-	mux.HandleFunc("GET /name", h.handleName)
-	mux.HandleFunc("GET /description", h.handleDescription)
-	mux.HandleFunc("GET /driverinfo", h.handleDriverInfo)
-	mux.HandleFunc("GET /driverversion", h.handleDriverVersion)
-	mux.HandleFunc("GET /interfaceversion", h.handleInterfaceVersion)
-	mux.HandleFunc("GET /devicestate", h.handleState)
-	mux.HandleFunc("GET /supportedactions", h.handleSupportedActions)
+	mux.Handle("GET /name", handleAPI(func(r *http.Request) (any, error) {
+		return h.dev.DeviceInfo().Name, nil
+	}))
+	mux.Handle("GET /description", handleAPI(func(r *http.Request) (any, error) {
+		return h.dev.DeviceInfo().Description, nil
+	}))
+	mux.Handle("GET /driverinfo", handleAPI(func(r *http.Request) (any, error) {
+		return h.dev.DriverInfo(), nil
+	}))
+	mux.Handle("GET /driverversion", handleAPI(func(r *http.Request) (any, error) {
+		return h.dev.DriverInfo().Version, nil
+	}))
+	mux.Handle("GET /interfaceversion", handleAPI(func(r *http.Request) (any, error) {
+		return h.dev.DriverInfo().InterfaceVersion, nil
+	}))
+	mux.Handle("GET /devicestate", handleAPI(func(r *http.Request) (any, error) {
+		return h.dev.GetState(), nil
+	}))
+	mux.Handle("GET /supportedactions", handleAPI(func(r *http.Request) (any, error) {
+		return []string{}, nil
+	}))
+	mux.Handle("GET /connecting", handleAPI(func(r *http.Request) (any, error) {
+		return h.dev.Connecting(), nil
+	}))
+	mux.Handle("GET /connected", handleAPI(func(r *http.Request) (any, error) {
+		return h.dev.Connected(), nil
+	}))
 
-	mux.HandleFunc("/connected", h.handleConnected)
-	mux.HandleFunc("GET /connecting", h.handleConnecting)
-	mux.HandleFunc("PUT /connect", h.handleConnect)
-	mux.HandleFunc("PUT /disconnect", h.handleDisconnect)
+	mux.Handle("PUT /connected", handleAPI(h.putConnected))
+	mux.Handle("PUT /connect", handleAPI(h.handleConnect))
+	mux.Handle("PUT /disconnect", handleAPI(h.handleDisconnect))
 
 	mux.HandleFunc("/setup", h.dev.HandleSetup)
 }
 
-func (h *DeviceHandler) handleName(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, h.dev.DeviceInfo().Name)
-}
-
-func (h *DeviceHandler) handleDescription(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, h.dev.DeviceInfo().Description)
-}
-
-func (h *DeviceHandler) handleDriverInfo(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, h.dev.DriverInfo())
-}
-
-func (h *DeviceHandler) handleDriverVersion(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, h.dev.DriverInfo().Version)
-}
-
-func (h *DeviceHandler) handleInterfaceVersion(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, h.dev.DriverInfo().InterfaceVersion)
-}
-
-func (h *DeviceHandler) handleState(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, h.dev.GetState())
-}
-
-func (h *DeviceHandler) handleSupportedActions(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, []string{})
-}
-
-func (h *DeviceHandler) handleConnected(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "PUT":
-		connected, err := parseBoolRequest(r, "Connected")
-		if err != nil {
-			http.Error(w, "Invalid request", http.StatusBadRequest)
-			return
-		}
-
-		if connected {
-			if err := h.dev.Connect(); err != nil {
-				handleError(w, r, 500, err.Error())
-				return
-			}
-		} else {
-			if err := h.dev.Disconnect(); err != nil {
-				handleError(w, r, 500, err.Error())
-				return
-			}
-		}
-		handleResponse(w, r, connected)
-	case "GET":
-		handleResponse(w, r, h.dev.Connected())
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+func (h *DeviceHandler) putConnected(r *http.Request) (any, error) {
+	connected, err := parseBoolRequest(r, "Connected")
+	if err != nil {
+		return nil, ErrBadRequest
 	}
+
+	if connected {
+		return connected, h.dev.Connect()
+	}
+	return connected, h.dev.Disconnect()
 }
 
-func (h *DeviceHandler) handleConnecting(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, h.dev.Connecting())
-}
-
-func (h *DeviceHandler) handleConnect(w http.ResponseWriter, r *http.Request) {
+func (h *DeviceHandler) handleConnect(r *http.Request) (any, error) {
 	if err := h.dev.Connect(); err != nil {
-		handleError(w, r, 500, err.Error())
-		return
+		return nil, err
 	}
-	handleResponse(w, r, true)
+	return true, nil
 }
 
-func (h *DeviceHandler) handleDisconnect(w http.ResponseWriter, r *http.Request) {
+func (h *DeviceHandler) handleDisconnect(r *http.Request) (any, error) {
 	if err := h.dev.Disconnect(); err != nil {
-		handleError(w, r, 500, err.Error())
-		return
+		return nil, err
 	}
-	handleResponse(w, r, true)
+	return true, nil
 }

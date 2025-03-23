@@ -20,6 +20,11 @@ const (
 	driverVersion = "1.0"
 )
 
+var (
+	errNotConnected     = fmt.Errorf("dome not connected")
+	errAlreadyConnected = fmt.Errorf("dome already connected")
+)
+
 // DomeSimulator implements the alpaca.Dome interface
 type DomeSimulator struct {
 	logger log.FieldLogger
@@ -86,6 +91,11 @@ func NewDomeSimulator(number int, db *bolt.DB, tmpl *template.Template, logger l
 	}
 }
 
+func (d *DomeSimulator) Close() error {
+	d.logger.Info("Closing dome simulator")
+	return nil
+}
+
 func (d *DomeSimulator) DeviceInfo() alpaca.DeviceInfo {
 	return d.info
 }
@@ -110,26 +120,6 @@ func (d *DomeSimulator) GetState() []alpaca.StateProperty {
 	return props
 }
 
-func (d *DomeSimulator) Connected() bool {
-	return d.connected
-}
-
-func (d *DomeSimulator) Connecting() bool {
-	return d.connecting
-}
-
-func (d *DomeSimulator) Connect() error {
-	d.connected = true
-	d.logger.Infof("%s connected", d.info.Name)
-	return nil
-}
-
-func (d *DomeSimulator) Disconnect() error {
-	d.connected = false
-	d.logger.Infof("%s disconnected", d.info.Name)
-	return nil
-}
-
 func (d *DomeSimulator) Capabilities() alpaca.DomeCapabilities {
 	return d.capabilities
 }
@@ -138,40 +128,102 @@ func (d *DomeSimulator) Status() alpaca.DomeStatus {
 	return d.status
 }
 
+func (d *DomeSimulator) Connect() error {
+	if d.connected {
+		return errAlreadyConnected
+	}
+
+	// d.connecting = true
+	// d.logger.Infof("%s connecting...", d.info.Name)
+
+	// go func() {
+	// 	d.logger.Infof("%s connection in progress...", d.info.Name)
+	// 	// Simulate connection delay
+	// 	time.Sleep(2 * time.Second)
+	// 	d.connecting = false
+	// 	d.connected = true
+	// 	d.logger.Infof("%s connected", d.info.Name)
+	// }()
+
+	d.connected = true
+	d.logger.Infof("%s connected", d.info.Name)
+
+	return nil
+}
+
+func (d *DomeSimulator) Disconnect() error {
+	if !d.connected {
+		return nil
+	}
+	d.connected = false
+	d.logger.Infof("%s disconnected", d.info.Name)
+	return nil
+}
+
+func (d *DomeSimulator) Connected() bool {
+	return d.connected
+}
+
+func (d *DomeSimulator) Connecting() bool {
+	return d.connecting
+}
+
 func (d *DomeSimulator) SetSlaved(slaved bool) error {
+	if !d.connected {
+		return errNotConnected
+	}
 	d.logger.Infof("Dome slaved: %v", slaved)
 	d.status.Slaved = slaved
 	return nil
 }
 
 func (d *DomeSimulator) SlewToAltitude(altitude float64) error {
+	if !d.connected {
+		return errNotConnected
+	}
 	d.logger.Infof("Slewing to altitude: %f", altitude)
 	d.status.Altitude = altitude
 	return nil
 }
 
 func (d *DomeSimulator) SlewToAzimuth(azimuth float64) error {
+	if !d.connected {
+		return errNotConnected
+	}
 	d.logger.Infof("Slewing to azimuth: %f", azimuth)
 	d.status.Azimuth = azimuth
 	d.status.Slewing = false
-	d.status.AtPark = false
 	d.status.AtHome = false
+	if azimuth == float64(d.config.ParkPosition) {
+		d.status.AtPark = true
+	} else {
+		d.status.AtPark = false
+	}
 	return nil
 }
 
 func (d *DomeSimulator) SyncToAzimuth(azimuth float64) error {
+	if !d.connected {
+		return errNotConnected
+	}
 	d.logger.Infof("Syncing to azimuth: %f", azimuth)
 	d.status.Azimuth = azimuth
 	return nil
 }
 
 func (d *DomeSimulator) AbortSlew() error {
+	if !d.connected {
+		return errNotConnected
+	}
 	d.logger.Info("Aborting slew")
 	d.status.Slewing = false
 	return nil
 }
 
 func (d *DomeSimulator) FindHome() error {
+	if !d.connected {
+		return errNotConnected
+	}
 	d.logger.Info("Finding home")
 	d.status.AtHome = true
 	d.status.AtPark = false
@@ -181,22 +233,24 @@ func (d *DomeSimulator) FindHome() error {
 }
 
 func (d *DomeSimulator) Park() error {
-	d.logger.Info("Parking")
-	d.status.AtHome = false
-	d.status.AtPark = true
-	d.status.Slewing = false
-	d.status.Azimuth = float64(d.config.ParkPosition)
-	return nil
+	return d.SlewToAzimuth(float64(d.config.ParkPosition))
 }
 
 func (d *DomeSimulator) SetPark() error {
+	if !d.connected {
+		return errNotConnected
+	}
 	d.logger.Info("Setting park position")
-	d.status.AtHome = false
+	d.config.ParkPosition = uint(d.status.Azimuth)
 	d.status.AtPark = true
-	return nil
+
+	return d.store.SetDomeConfig(d.config)
 }
 
 func (d *DomeSimulator) SetShutter(cmd alpaca.ShutterCommand) error {
+	if !d.connected {
+		return errNotConnected
+	}
 	d.logger.Infof("Setting shutter: %v", cmd)
 	switch cmd {
 	case alpaca.ShutterCommandOpen:

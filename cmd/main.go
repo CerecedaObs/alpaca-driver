@@ -37,6 +37,7 @@ func main() {
 	defer db.Close()
 
 	dome := simulators.NewDomeSimulator(0, db, tmpl, log.WithField("device", "dome"))
+	defer dome.Close()
 
 	serverDesc := alpaca.ServerDescription{
 		Name:                "ZRO Alpaca Server",
@@ -74,7 +75,6 @@ func main() {
 			log.Fatalf("Could not listen on %s: %v\n", srv.Addr, err)
 		}
 		wg.Done()
-		log.Debug("Server stopped")
 	}()
 
 	// Create discovery responder

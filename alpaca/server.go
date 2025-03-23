@@ -47,9 +47,11 @@ type DeviceHTTPHandler interface {
 
 func (s *Server) AddRoutes() *http.ServeMux {
 	r := http.NewServeMux()
-	r.HandleFunc("GET /management/apiversions", s.handleAPIVersions)
-	r.HandleFunc("GET /management/v1/description", s.handleDescription)
-	r.HandleFunc("GET /management/v1/configureddevices", s.handleConfiguredDevices)
+
+	// Add management routes
+	r.Handle("GET /management/apiversions", handleMgm(s.handleAPIVersions))
+	r.Handle("GET /management/v1/description", handleMgm(s.handleDescription))
+	r.Handle("GET /management/v1/configureddevices", handleMgm(s.handleConfiguredDevices))
 	r.HandleFunc("/setup", s.handleSetup)
 
 	// Create handlers for each device
@@ -59,8 +61,8 @@ func (s *Server) AddRoutes() *http.ServeMux {
 
 		switch d := dev.(type) {
 		case Dome:
-			logger := log.WithField("device", d.DeviceInfo().Name)
-			handler = NewDomeHandler(d, logger)
+			log.Infof("Creating new DomeHandler for %s", dev.DeviceInfo().Name)
+			handler = NewDomeHandler(d)
 			handler.RegisterRoutes(mux)
 		default:
 			log.Errorf("Unknown device type: %T", dev)
@@ -81,21 +83,21 @@ func (s *Server) AddRoutes() *http.ServeMux {
 	return r
 }
 
-func (s *Server) handleAPIVersions(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, []int{1})
+func (s *Server) handleAPIVersions(r *http.Request) (any, error) {
+	return []int{1}, nil
 }
 
-func (s *Server) handleDescription(w http.ResponseWriter, r *http.Request) {
-	handleResponse(w, r, s.description)
+func (s *Server) handleDescription(r *http.Request) (any, error) {
+	return s.description, nil
 }
 
-func (s *Server) handleConfiguredDevices(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleConfiguredDevices(r *http.Request) (any, error) {
 	deviceInfo := make([]DeviceInfo, 0, len(s.devices))
 	for _, device := range s.devices {
 		deviceInfo = append(deviceInfo, device.DeviceInfo())
 	}
 
-	handleResponse(w, r, deviceInfo)
+	return deviceInfo, nil
 }
 
 // handleSetup returns a user interface for setting up the server.

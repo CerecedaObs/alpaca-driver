@@ -12,14 +12,16 @@ import (
 	"sync/atomic"
 )
 
+var ErrBadRequest = errors.New("bad request")
+
 // Global transaction counter
 var txCounter atomic.Int32
 
 type baseResponse struct {
 	ClientTransactionID int    `json:"ClientTransactionID"`
 	ServerTransactionID int    `json:"ServerTransactionID"`
-	ErrorNumber         int    `json:"ErrorNumber"`
-	ErrorMessage        string `json:"ErrorMessage"`
+	ErrorNumber         int    `json:"ErrorNumber,omitempty"`
+	ErrorMessage        string `json:"ErrorMessage,omitempty"`
 	Value               any    `json:"Value,omitempty"`
 }
 
@@ -53,52 +55,67 @@ func getClientTxID(params url.Values, path string) (int, error) {
 	// return 0, nil
 }
 
-func handleResponse(w http.ResponseWriter, r *http.Request, value any) {
-	var params url.Values
+// handleMgm wraps a management handler function and returns an http.Handler.
+// Management handlers do not require a ClientTransactionID.
+func handleMgm(handler func(r *http.Request) (any, error)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var response baseResponse
 
-	if r.Method == "PUT" {
-		// PUT requests have the parameters in the body.
-		params, _ = parseBodyParams(r)
+		value, err := handler(r)
+		if err != nil {
+			response.ErrorNumber = 1
+			response.ErrorMessage = err.Error()
+		} else {
+			response.Value = value
+		}
 
-	} else {
-		// GET requests have the parameters in the URL.
-		params = r.URL.Query()
-	}
-
-	txID, err := getClientTxID(params, r.URL.Path)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	response := baseResponse{
-		ServerTransactionID: int(txCounter.Add(1)),
-		ClientTransactionID: txID,
-	}
-	if value != nil {
-		response.Value = value
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	})
 }
 
-func handleError(w http.ResponseWriter, r *http.Request, code int, message string) {
-	params := r.URL.Query()
+// handleAPI wraps an API handler function and returns an http.Handler.
+// The handler function should return a value and an error.
+// If the error is not nil, it will be returned as an Alpaca error response.
+// If the error is nil, the value will be returned as an Alpaca response.
+func handleAPI(handler func(r *http.Request) (any, error)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var params url.Values
 
-	txID, err := getClientTxID(params, r.URL.Path)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+		if r.Method == "PUT" {
+			// PUT requests have the parameters in the body.
+			params, _ = parseBodyParams(r)
 
-	response := baseResponse{
-		ServerTransactionID: int(txCounter.Add(1)),
-		ClientTransactionID: txID,
-		ErrorNumber:         code,
-		ErrorMessage:        message,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+		} else {
+			// GET requests have the parameters in the URL.
+			params = r.URL.Query()
+		}
+
+		txID, err := getClientTxID(params, r.URL.Path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		response := baseResponse{
+			ServerTransactionID: int(txCounter.Add(1)),
+			ClientTransactionID: txID,
+		}
+
+		value, err := handler(r)
+		if err == ErrBadRequest {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		} else if err != nil {
+			response.ErrorNumber = 1
+			response.ErrorMessage = err.Error()
+		} else {
+			response.Value = value
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	})
 }
 
 // parseRequest now reads the field from the request body.
