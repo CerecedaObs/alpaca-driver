@@ -1,6 +1,15 @@
 
 
-all: alpaca-driver.exe
+all: zro-alpaca.exe
 
-alpaca-driver.exe:
-	GOOS=windows GOARCH=amd64 go build -o alpaca-driver.exe ./cmd/main.go
+test:
+	go test ./...
+
+zro-alpaca.exe:
+	GOOS=windows GOARCH=amd64 go build ./cmd/zro-alpaca
+
+clean:
+	rm -f zro-alpaca.exe
+
+
+.PHONY: all clean

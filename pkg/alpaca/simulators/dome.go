@@ -1,7 +1,7 @@
 package simulators
 
 import (
-	"alpaca/alpaca"
+	"alpaca/pkg/alpaca"
 	"fmt"
 	"html/template"
 	"net/http"
