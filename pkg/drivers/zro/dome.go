@@ -1,6 +1,7 @@
 package zro
 
 import (
+	"alpaca/pkg/alpaca"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,14 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	domeUID       = "621ca2e0-399a-43f6-b9e7-e6575d953508"
+	deviceName    = "ZRO Dome"
+	deviceType    = "Dome"
+	driverName    = "ZRO Dome Driver"
+	driverVersion = "1.0"
 )
 
 var (
@@ -44,6 +53,7 @@ type Config struct {
 	ShortDistance  int  // Short distance in encoder ticks
 	ParkOnShutter  bool // True if the dome should park on shutter
 	ShutterTimeout int  // Shutter timeout in seconds
+	UseShutter     bool // True if the shutter is used
 }
 
 var DefaultConfig = Config{
@@ -59,6 +69,7 @@ var DefaultConfig = Config{
 	ShortDistance:  100,
 	ParkOnShutter:  false,
 	ShutterTimeout: 0,
+	UseShutter:     true,
 }
 
 type cmdCode uint8
@@ -162,6 +173,7 @@ type Dome struct {
 	topicRoot string      // Root topic for the ZRO dome controller
 	status    Status
 	config    Config // Configuration parameters
+	number    int    // Driver number
 
 	responseChan chan Response // Channel for responses from the ZRO dome controller
 	logger       log.FieldLogger
@@ -169,11 +181,12 @@ type Dome struct {
 	// shutterLink bool   // True if the shutter is linked to the dome
 }
 
-func NewDome(client mqtt.Client, config Config, topicRoot string) *Dome {
+func NewDome(client mqtt.Client, config Config, topicRoot string, number int) *Dome {
 	return &Dome{
 		client:       client,
 		config:       config,
 		topicRoot:    topicRoot,
+		number:       number,
 		responseChan: make(chan Response),
 		logger:       log.WithFields(log.Fields{"component": "ZRO"}),
 	}
@@ -212,11 +225,13 @@ func (d *Dome) Run(ctx context.Context) {
 	defer d.client.Unsubscribe(responseTopic)
 
 	// Connect to the shutter
-	if err := d.sendCommand(string(cmdConnectShutter)); err != nil {
-		d.logger.Errorf("Failed to send connect shutter command: %v", err)
-		return
+	if d.config.UseShutter {
+		if err := d.sendCommand(string(cmdConnectShutter)); err != nil {
+			d.logger.Errorf("Failed to send connect shutter command: %v", err)
+			return
+		}
+		defer d.sendCommand(string(cmdDisconnectShutter))
 	}
-	defer d.sendCommand(string(cmdDisconnectShutter))
 
 	// Read status, firmware version and battery status
 	if err := d.sendCommand(string(cmdStatus)); err != nil {
@@ -233,6 +248,52 @@ func (d *Dome) Run(ctx context.Context) {
 	}
 
 	<-ctx.Done()
+}
+
+func (d *Dome) Connect() error {
+	// TODO: Implement the connection logic
+	return nil
+}
+func (d *Dome) Connecting() bool {
+	return true
+}
+
+func (d *Dome) Connected() bool {
+	return true
+}
+
+func (d *Dome) Disconnect() error {
+	return nil
+}
+
+func (d *Dome) Capabilities() alpaca.DomeCapabilities {
+	return alpaca.DomeCapabilities{
+		CanFindHome:    true,
+		CanPark:        true,
+		CanSetAltitude: false,
+		CanSetAzimuth:  true,
+		CanSetPark:     true,
+		CanSetShutter:  d.config.UseShutter,
+		CanSlave:       true,
+		CanSyncAzimuth: true,
+	}
+}
+
+func (d *Dome) DeviceInfo() alpaca.DeviceInfo {
+	return alpaca.DeviceInfo{
+		Name:     deviceName,
+		Type:     deviceType,
+		Number:   d.number,
+		UniqueID: domeUID,
+	}
+}
+
+func (d *Dome) DriverInfo() alpaca.DriverInfo {
+	return alpaca.DriverInfo{
+		Name:             driverName,
+		Version:          driverVersion,
+		InterfaceVersion: 1,
+	}
 }
 
 func (d *Dome) sendCommand(cmd string) error {

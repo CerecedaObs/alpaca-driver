@@ -2,8 +2,8 @@ package main
 
 import (
 	"alpaca/pkg/alpaca"
-	"alpaca/pkg/alpaca/simulators"
-	"alpaca/pkg/zro"
+	"alpaca/pkg/drivers/dome_simulator"
+	"alpaca/pkg/drivers/zro"
 	"alpaca/templates"
 	"context"
 	"fmt"
@@ -20,6 +20,39 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
+// createMQTTClient initializes and returns a new MQTT client using the configuration
+// retrieved from the provided alpaca.Store. It allows overriding the MQTT broker,
+// username, and password via CLI context flags.
+func createMQTTClient(store *alpaca.Store, c *cli.Context) (mqtt.Client, error) {
+	mqttConfig, err := store.GetMQTTConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MQTT config: %v", err)
+	}
+
+	if c.IsSet("broker") {
+		mqttConfig.Host = c.String("broker")
+	}
+	if c.IsSet("username") {
+		mqttConfig.Username = c.String("username")
+	}
+	if c.IsSet("password") {
+		mqttConfig.Password = c.String("password")
+	}
+
+	opts := mqtt.NewClientOptions()
+	opts.SetClientID("zro-alpaca")
+	opts.AddBroker(mqttConfig.Host)
+	opts.SetUsername(mqttConfig.Username)
+	opts.SetPassword(mqttConfig.Password)
+	log.Debugf("domeConfig: %#v", mqttConfig)
+
+	mqttClient := mqtt.NewClient(opts)
+	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
+		return nil, fmt.Errorf("failed to connect to MQTT broker: %v", token.Error())
+	}
+	return mqttClient, nil
+}
+
 func run(c *cli.Context) error {
 	if c.Bool("debug") {
 		log.SetLevel(log.DebugLevel)
@@ -29,39 +62,34 @@ func run(c *cli.Context) error {
 
 	tmpl, err := templates.LoadTemplates()
 	if err != nil {
-		log.Fatalf("Error loading setup template: %v", err)
+		return fmt.Errorf("failed to load templates: %v", err)
 	}
 
 	db, err := bolt.Open("alpaca.db", 0600, nil)
 	if err != nil {
-		log.Fatalf("Error opening database: %v", err)
+		return fmt.Errorf("failed to open database: %v", err)
 	}
 	defer db.Close()
 
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(c.String("broker"))
-	opts.SetClientID("zro-alpaca")
-	opts.SetUsername(c.String("username"))
-	opts.SetPassword(c.String("password"))
-	// opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
-	// 	log.WithFields(log.Fields{
-	// 		"topic":   msg.Topic(),
-	// 		"payload": string(msg.Payload()),
-	// 	}).Debug("Received message")
-	// })
+	store, err := alpaca.NewStore(db)
+	if err != nil {
+		return fmt.Errorf("failed to create store: %v", err)
+	}
 
-	mqttClient := mqtt.NewClient(opts)
-	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatalf("Failed to connect to MQTT broker: %v", token.Error())
+	mqttClient, err := createMQTTClient(store, c)
+	if err != nil {
+		return fmt.Errorf("failed to create MQTT client: %v", err)
 	}
 	defer mqttClient.Disconnect(250)
 
 	log.Info("Connected to MQTT broker")
 
 	// TODO: Load ZRO configuration from database
-	zroDome := zro.NewDome(mqttClient, zro.DefaultConfig, "/ZRO")
+	domeConfig := zro.DefaultConfig
+	domeConfig.UseShutter = false
+	zroDome := zro.NewDome(mqttClient, domeConfig, "/ZRO", 1)
 
-	dome := simulators.NewDomeSimulator(0, db, tmpl, log.WithField("device", "dome"))
+	dome := dome_simulator.NewDomeSimulator(0, db, tmpl, log.WithField("device", "dome"))
 	defer dome.Close()
 
 	serverDesc := alpaca.ServerDescription{
@@ -71,12 +99,11 @@ func run(c *cli.Context) error {
 		Location:            "ZRO",
 	}
 
-	store, err := alpaca.NewStore(db)
-	if err != nil {
-		log.Fatalf("Error creating store: %v", err)
+	devices := []alpaca.Device{
+		// zroDome,
+		dome,
 	}
-
-	server := alpaca.NewServer(serverDesc, []alpaca.Device{dome}, store, tmpl)
+	server := alpaca.NewServer(serverDesc, devices, store, tmpl)
 
 	mux := server.AddRoutes()
 
@@ -102,7 +129,7 @@ func run(c *cli.Context) error {
 
 	wg.Add(1)
 	go func() {
-		log.Debug("Server started")
+		log.Debugf("Server started on %s", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Could not listen on %s: %v\n", srv.Addr, err)
 		}
@@ -158,6 +185,7 @@ func main() {
 				Aliases: []string{"p"},
 				Usage:   "Port to listen on",
 				Value:   8090,
+				EnvVars: []string{"ALPACA_PORT"},
 			},
 			&cli.StringFlag{
 				Name:    "broker",

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -25,12 +24,12 @@ type Server struct {
 	description ServerDescription
 	devices     []Device
 
-	db   *store
+	db   *Store
 	tmpl *template.Template
 }
 
 // NewServer creates a new ManagementServer instance.
-func NewServer(description ServerDescription, devices []Device, db *store, tmpl *template.Template) *Server {
+func NewServer(description ServerDescription, devices []Device, db *Store, tmpl *template.Template) *Server {
 	server := Server{
 		description: description,
 		devices:     devices,
@@ -148,15 +147,8 @@ func parseSetupForm(r *http.Request) (MQTTConfig, error) {
 		return MQTTConfig{}, fmt.Errorf("error parsing form: %v", err)
 	}
 
-	port := r.FormValue("port")
-	intPort, err := strconv.Atoi(port)
-	if err != nil {
-		return MQTTConfig{}, fmt.Errorf("invalid port: %v", err)
-	}
-
 	return MQTTConfig{
 		Host:     r.FormValue("host"),
-		Port:     intPort,
 		Username: r.FormValue("username"),
 		Password: r.FormValue("password"),
 	}, nil

@@ -1,4 +1,4 @@
-package simulators
+package dome_simulator
 
 import (
 	"encoding/json"
