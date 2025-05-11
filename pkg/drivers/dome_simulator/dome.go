@@ -36,18 +36,18 @@ type DomeSimulator struct {
 	connecting bool
 }
 
-func NewDomeSimulator(number int, db *bolt.DB, tmpl *template.Template, logger log.FieldLogger) *DomeSimulator {
+func NewDomeSimulator(number int, db *bolt.DB, tmpl *template.Template, logger log.FieldLogger) (*DomeSimulator, error) {
 	store, err := NewStore(db)
 	if err != nil {
-		logger.Fatalf("Error creating store: %v", err)
+		return nil, fmt.Errorf("failed to create store: %v", err)
 	}
 
 	config, err := store.GetDomeConfig()
 	if err != nil {
-		logger.Fatalf("Error getting dome config: %v", err)
+		return nil, fmt.Errorf("failed to get dome config: %v", err)
 	}
 
-	return &DomeSimulator{
+	dome := DomeSimulator{
 		logger: logger,
 		tmpl:   tmpl,
 		store:  store,
@@ -84,6 +84,8 @@ func NewDomeSimulator(number int, db *bolt.DB, tmpl *template.Template, logger l
 			Shutter:  alpaca.ShutterOpen,
 		},
 	}
+
+	return &dome, nil
 }
 
 func (d *DomeSimulator) Close() error {
@@ -168,7 +170,6 @@ func (d *DomeSimulator) SetSlaved(slaved bool) error {
 		return alpaca.ErrNotConnected
 	}
 	d.logger.Infof("Dome slaved: %v", slaved)
-	d.status.Slaved = slaved
 	return nil
 }
 
@@ -289,7 +290,7 @@ func (d *DomeSimulator) renderSetupForm(w http.ResponseWriter, cfg DomeConfig, s
 		Error   string
 	}{cfg, success, err}
 
-	if err := d.tmpl.ExecuteTemplate(w, "dome_setup.html", data); err != nil {
+	if err := d.tmpl.ExecuteTemplate(w, "dome_simulator_setup.html", data); err != nil {
 		http.Error(w, "Error rendering template", http.StatusInternalServerError)
 		d.logger.Errorf("Error rendering template: %v", err)
 	}

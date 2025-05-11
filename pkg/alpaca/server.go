@@ -103,7 +103,7 @@ func (s *Server) handleConfiguredDevices(r *http.Request) (any, error) {
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		cfg, err := s.db.GetMQTTConfig()
+		cfg, err := s.db.GetConfig()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -117,8 +117,8 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Infof("Setting MQTT config: %+v", cfg)
-		if err := s.db.SetMQTTConfig(cfg); err != nil {
+		log.Infof("Setting config: %+v", cfg)
+		if err := s.db.SetConfig(cfg); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -130,9 +130,9 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) renderSetupForm(w http.ResponseWriter, cfg MQTTConfig, success bool, err string) {
+func (s *Server) renderSetupForm(w http.ResponseWriter, cfg Config, success bool, err string) {
 	data := struct {
-		MQTTConfig
+		Config
 		Success bool
 		Error   string
 	}{cfg, success, err}
@@ -142,14 +142,10 @@ func (s *Server) renderSetupForm(w http.ResponseWriter, cfg MQTTConfig, success 
 	}
 }
 
-func parseSetupForm(r *http.Request) (MQTTConfig, error) {
+func parseSetupForm(r *http.Request) (Config, error) {
 	if err := r.ParseForm(); err != nil {
-		return MQTTConfig{}, fmt.Errorf("error parsing form: %v", err)
+		return Config{}, fmt.Errorf("error parsing form: %v", err)
 	}
 
-	return MQTTConfig{
-		Host:     r.FormValue("host"),
-		Username: r.FormValue("username"),
-		Password: r.FormValue("password"),
-	}, nil
+	return Config{}, nil
 }

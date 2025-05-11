@@ -1,0 +1,105 @@
+{{define "domeSettings"}}
+<form action="" method="post">
+    <div class="row">
+        <div class="col-md-6">
+            <h5>MQTT</h5>
+            <div class="mb-3">
+                <label for="mqtt-host" class="form-label">Host</label>
+                <input type="text" id="mqtt-host" name="mqtt-host" class="form-control" required value="{{.Host}}">
+            </div>
+            <div class="mb-3">
+                <label for="mqtt-username" class="form-label">Username</label>
+                <input type="text" id="mqtt-username" name="mqtt-username" class="form-control" value="{{.Username}}">
+            </div>
+            <div class="mb-3">
+                <label for="mqtt-password" class="form-label">Password</label>
+                <input type="password" id="mqtt-password" name="mqtt-password" class="form-control" value="{{.Password}}">
+            </div>
+            <div class="mb-3">
+                <label for="mqtt-topic-root" class="form-label">Topic Root</label>
+                <input type="text" id="mqtt-topic-root" name="mqtt-topic-root" class="form-control" value="{{.TopicRoot}}">
+            </div>
+            <h5 class="mt-4">Dome Geometry</h5>
+            <div class="mb-3">
+                <label for="ticks-per-turn" class="form-label">Encoder ticks per revolution</label>
+                <input type="number" id="ticks-per-turn" name="ticks-per-turn" class="form-control" min="1" required value="{{.TicksPerTurn}}">
+            </div>
+            <div class="mb-3">
+                <label for="tolerance" class="form-label">Tolerance (encoder ticks)</label>
+                <input type="number" id="tolerance" name="tolerance" class="form-control" required value="{{.Tolerance}}">
+            </div>
+            <div class="mb-3">
+                <label for="home-position" class="form-label">Home position (degrees)</label>
+                <input type="number" id="home-position" name="home-position" class="form-control" required min="0" max="359" value="{{.HomePosition}}">
+            </div>
+            <div class="mb-3">
+                <label for="park-position" class="form-label">Park position (degrees)</label>
+                <input type="number" id="park-position" name="park-position" class="form-control" required min="0" max="359" value="{{.ParkPosition}}">
+            </div>
+        </div>
+        <div class="col-md-6">
+            <h5>Motion & Control</h5>
+            <div class="mb-3">
+                <label for="azimuth-timeout" class="form-label">Azimuth timeout (ms)</label>
+                <input type="number" id="azimuth-timeout" name="azimuth-timeout" class="form-control" required value="{{.AzimuthTimeout}}">
+            </div>
+            <div class="mb-3">
+                <label for="max-speed" class="form-label">Maximum speed (encoder ticks/sec)</label>
+                <input type="number" id="max-speed" name="max-speed" class="form-control" required value="{{.MaxSpeed}}">
+            </div>
+            <div class="mb-3">
+                <label for="min-speed" class="form-label">Minimum speed (encoder ticks/sec)</label>
+                <input type="number" id="min-speed" name="min-speed" class="form-control" required value="{{.MinSpeed}}">
+            </div>
+            <div class="mb-3">
+                <label for="brake-speed" class="form-label">Brake speed (encoder ticks/sec)</label>
+                <input type="number" id="brake-speed" name="brake-speed" class="form-control" required value="{{.BrakeSpeed}}">
+            </div>
+            <div class="mb-3">
+                <label for="vel-timeout" class="form-label">Velocity timeout (seconds)</label>
+                <input type="number" id="vel-timeout" name="vel-timeout" class="form-control" required value="{{.VelTimeout}}">
+            </div>
+            <div class="mb-3">
+                <label for="short-distance" class="form-label">Short distance (encoder ticks)</label>
+                <input type="number" id="short-distance" name="short-distance" class="form-control" required value="{{.ShortDistance}}">
+            </div>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="park-on-shutter" name="park-on-shutter" value="true" {{if .ParkOnShutter}}checked{{end}}>
+                <label class="form-check-label" for="park-on-shutter">Park on shutter</label>
+            </div>
+            <div class="mb-3">
+                <label for="shutter-timeout" class="form-label">Shutter timeout (seconds)</label>
+                <input type="number" id="shutter-timeout" name="shutter-timeout" class="form-control" required value="{{.ShutterTimeout}}">
+            </div>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="use-shutter" name="use-shutter" value="true" {{if .UseShutter}}checked{{end}}>
+                <label class="form-check-label" for="use-shutter">Use shutter</label>
+            </div>
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary mt-3">Save</button>
+    {{if .Success}}
+    <div class="alert alert-success mt-3" role="alert">
+        Settings saved successfully.
+    </div>
+    {{end}}
+    {{if .Error}}
+    <div class="alert alert-danger mt-3" role="alert">
+        {{.Error}}
+    </div>
+    {{end}}
+</form>
+{{end}}
+
+{{template "header"}}
+<div class="container">
+    <main>
+        <div class="py-5 text-center">
+            <h1>ZRO Dome Setup</h1>
+        </div>
+        <div class="container" style="max-width: 800px;">
+                {{template "domeSettings" .}}
+        </div>
+    </main>
+</div>
+{{template "footer"}}

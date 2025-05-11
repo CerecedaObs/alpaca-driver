@@ -14,44 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 	cli "github.com/urfave/cli/v2"
 	bolt "go.etcd.io/bbolt"
 )
-
-// createMQTTClient initializes and returns a new MQTT client using the configuration
-// retrieved from the provided alpaca.Store. It allows overriding the MQTT broker,
-// username, and password via CLI context flags.
-func createMQTTClient(store *alpaca.Store, c *cli.Context) (mqtt.Client, error) {
-	mqttConfig, err := store.GetMQTTConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get MQTT config: %v", err)
-	}
-
-	if c.IsSet("broker") {
-		mqttConfig.Host = c.String("broker")
-	}
-	if c.IsSet("username") {
-		mqttConfig.Username = c.String("username")
-	}
-	if c.IsSet("password") {
-		mqttConfig.Password = c.String("password")
-	}
-
-	opts := mqtt.NewClientOptions()
-	opts.SetClientID("zro-alpaca")
-	opts.AddBroker(mqttConfig.Host)
-	opts.SetUsername(mqttConfig.Username)
-	opts.SetPassword(mqttConfig.Password)
-	log.Debugf("domeConfig: %#v", mqttConfig)
-
-	mqttClient := mqtt.NewClient(opts)
-	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
-		return nil, fmt.Errorf("failed to connect to MQTT broker: %v", token.Error())
-	}
-	return mqttClient, nil
-}
 
 func run(c *cli.Context) error {
 	if c.Bool("debug") {
@@ -76,21 +42,16 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create store: %v", err)
 	}
 
-	mqttClient, err := createMQTTClient(store, c)
+	simDome, err := dome_simulator.NewDomeSimulator(0, db, tmpl, log.WithField("device", "dome"))
 	if err != nil {
-		return fmt.Errorf("failed to create MQTT client: %v", err)
+		return fmt.Errorf("failed to create dome simulator: %v", err)
 	}
-	defer mqttClient.Disconnect(250)
+	defer simDome.Close()
 
-	log.Info("Connected to MQTT broker")
-
-	// TODO: Load ZRO configuration from database
-	domeConfig := zro.DefaultConfig
-	domeConfig.UseShutter = false
-	zroDome := zro.NewDome(mqttClient, domeConfig, "/ZRO", 1)
-
-	dome := dome_simulator.NewDomeSimulator(0, db, tmpl, log.WithField("device", "dome"))
-	defer dome.Close()
+	zroDome, err := zro.NewDriver(1, db, tmpl, log.WithField("device", "zro"))
+	if err != nil {
+		return fmt.Errorf("failed to create ZRO dome: %v", err)
+	}
 
 	serverDesc := alpaca.ServerDescription{
 		Name:                "ZRO Alpaca Server",
@@ -100,8 +61,8 @@ func run(c *cli.Context) error {
 	}
 
 	devices := []alpaca.Device{
-		// zroDome,
-		dome,
+		simDome,
+		alpaca.Dome(zroDome),
 	}
 	server := alpaca.NewServer(serverDesc, devices, store, tmpl)
 
@@ -120,12 +81,12 @@ func run(c *cli.Context) error {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		zroDome.Run(ctx)
-		wg.Done()
-		log.Info("ZRO dome stopped")
-	}()
+	// wg.Add(1)
+	// go func() {
+	// 	zroDome.Run(ctx)
+	// 	wg.Done()
+	// 	log.Info("ZRO dome stopped")
+	// }()
 
 	wg.Add(1)
 	go func() {

@@ -9,17 +9,11 @@ import (
 )
 
 const (
-	bucket          = "alpaca"
-	defaultMQTTHost = "tcp://localhost:1883"
-
-	mqttConfigKey = "mqtt_config"
+	bucket    = "alpaca"
+	configKey = "server_config"
 )
 
-type MQTTConfig struct {
-	Host     string
-	Username string
-	Password string
-}
+type Config struct{}
 
 type Store struct {
 	db *bolt.DB
@@ -35,23 +29,15 @@ func NewStore(db *bolt.DB) (*Store, error) {
 }
 
 func (s *Store) setDefaults() error {
-	if _, err := s.GetMQTTConfig(); err != nil {
-		log.Infof("Setting default MQTT config")
-		s.SetMQTTConfig(MQTTConfig{
-			Host:     defaultMQTTHost,
-			Username: "admin",
-		})
+	if _, err := s.GetConfig(); err != nil {
+		log.Infof("Setting default config")
 	}
 
 	return nil
 }
 
-// SetMQTTConfig saves the MQTT configuration as a json string in the database.
-func (s *Store) SetMQTTConfig(cfg MQTTConfig) error {
-	if cfg.Host == "" {
-		return fmt.Errorf("host cannot be empty")
-	}
-
+// SetConfig saves the configuration as a json string in the database.
+func (s *Store) SetConfig(cfg Config) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte(bucket))
 		if err != nil {
@@ -59,13 +45,13 @@ func (s *Store) SetMQTTConfig(cfg MQTTConfig) error {
 		}
 
 		value, _ := json.Marshal(cfg)
-		return b.Put([]byte(mqttConfigKey), value)
+		return b.Put([]byte(configKey), value)
 	})
 }
 
-// GetMQTTConfig retrieves the MQTT configuration from the database.
-func (s *Store) GetMQTTConfig() (MQTTConfig, error) {
-	var cfg MQTTConfig
+// GetConfig retrieves the configuration from the database.
+func (s *Store) GetConfig() (Config, error) {
+	var cfg Config
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
@@ -73,7 +59,7 @@ func (s *Store) GetMQTTConfig() (MQTTConfig, error) {
 			return fmt.Errorf("bucket %s not found", bucket)
 		}
 
-		value := b.Get([]byte(mqttConfigKey))
+		value := b.Get([]byte(configKey))
 		if value == nil {
 			return fmt.Errorf("key config not found")
 		}

@@ -1,25 +1,8 @@
 {{define "driverSettings"}}
 <form action="" method="post">
-    <div class="section">
-        <h4>MQTT Settings</h4>
-        <div class="mb-3">
-            <label for="host" class="form-label">Broker:</label>
-            <input type="text" id="host" name="host" class="form-control" required value="{{.Host}}" placeholder="e.g. tcp://192.168.0.124:1883">
-            <small class="form-text text-muted">Example: tcp://192.168.0.124:1883</small>
-        </div>
-        <div class="mb-3">
-            <label for="username" class="form-label">Username:</label>
-            <input type="text" id="username" name="username" class="form-control" required value="{{.Username}}">
-        </div>
-        <div class="mb-3">
-            <label for="password" class="form-label">Password:</label>
-            <input type="password" id="password" name="password" class="form-control" required value="{{.Password}}">
-        </div>
-        <button type="submit" class="btn btn-primary">Save</button>
-    </div>
-
     <div class="alert alert-warning mt-3" role="alert">
-        <strong>Note:</strong> The ZRO Alpaca server must be restarted for changes to take effect.
+        <p><strong>Note:</strong> Nothing to see here yet.</p>
+        <p>This is a placeholder for future settings.</p>
     </div>
 
     {{if .Success}}
@@ -27,6 +10,7 @@
         Settings saved successfully.
     </div>
     {{end}}
+
     {{if .Error}}
     <div class="alert alert-danger mt-3" role="alert">
         {{.Error}}
