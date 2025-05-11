@@ -52,6 +52,7 @@ func run(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create ZRO dome: %v", err)
 	}
+	defer zroDome.Close()
 
 	serverDesc := alpaca.ServerDescription{
 		Name:                "ZRO Alpaca Server",
@@ -62,7 +63,7 @@ func run(c *cli.Context) error {
 
 	devices := []alpaca.Device{
 		simDome,
-		alpaca.Dome(zroDome),
+		zroDome,
 	}
 	server := alpaca.NewServer(serverDesc, devices, store, tmpl)
 
@@ -76,17 +77,8 @@ func run(c *cli.Context) error {
 	// Channel to listen for interrupt or terminate signals
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	// stop := make(chan os.Signal, 1)
-	// signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
-
-	// wg.Add(1)
-	// go func() {
-	// 	zroDome.Run(ctx)
-	// 	wg.Done()
-	// 	log.Info("ZRO dome stopped")
-	// }()
 
 	wg.Add(1)
 	go func() {
@@ -147,25 +139,6 @@ func main() {
 				Usage:   "Port to listen on",
 				Value:   8090,
 				EnvVars: []string{"ALPACA_PORT"},
-			},
-			&cli.StringFlag{
-				Name:    "broker",
-				Aliases: []string{"b"},
-				Usage:   "MQTT broker address",
-				Value:   "tcp://localhost:1883",
-				EnvVars: []string{"MQTT_BROKER"},
-			},
-			&cli.StringFlag{
-				Name:    "username",
-				Aliases: []string{"u"},
-				Usage:   "MQTT username",
-				EnvVars: []string{"MQTT_USERNAME"},
-			},
-			&cli.StringFlag{
-				Name:    "password",
-				Aliases: []string{"pw"},
-				Usage:   "MQTT password",
-				EnvVars: []string{"MQTT_PASSWORD"},
 			},
 		},
 		Action: run,

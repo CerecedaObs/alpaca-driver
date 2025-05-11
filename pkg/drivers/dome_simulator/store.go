@@ -18,7 +18,7 @@ const (
 	domeConfigKey = "dome_config"
 )
 
-type DomeConfig struct {
+type Config struct {
 	HomePosition   uint `json:"home_position"`   // degrees
 	ParkPosition   uint `json:"park_position"`   // degrees
 	ShutterTimeout uint `json:"shutter_timeout"` // seconds
@@ -39,9 +39,9 @@ func NewStore(db *bolt.DB) (*store, error) {
 }
 
 func (s *store) setDefaults() error {
-	if _, err := s.GetDomeConfig(); err != nil {
+	if _, err := s.GetConfig(); err != nil {
 		log.Infof("Setting default MQTT config")
-		s.SetDomeConfig(DomeConfig{
+		s.SetConfig(Config{
 			HomePosition:   defaultHomePosition,
 			ParkPosition:   defaultParkPosition,
 			ShutterTimeout: defaultShutterTimeout,
@@ -52,9 +52,8 @@ func (s *store) setDefaults() error {
 	return nil
 }
 
-// SetMQTTConfig saves the MQTT configuration as a json string in the database.
-// SetDomeConfig saves the dome configuration as a json string in the database.
-func (s *store) SetDomeConfig(cfg DomeConfig) error {
+// SetConfig saves the dome configuration as a json string in the database.
+func (s *store) SetConfig(cfg Config) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte(bucket))
 		if err != nil {
@@ -66,9 +65,9 @@ func (s *store) SetDomeConfig(cfg DomeConfig) error {
 	})
 }
 
-// GetDomeConfig retrieves the dome configuration from the database.
-func (s *store) GetDomeConfig() (DomeConfig, error) {
-	var cfg DomeConfig
+// GetConfig retrieves the dome configuration from the database.
+func (s *store) GetConfig() (Config, error) {
+	var cfg Config
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))

@@ -25,7 +25,7 @@ type DomeSimulator struct {
 	logger log.FieldLogger
 	tmpl   *template.Template
 	store  *store
-	config DomeConfig
+	config Config
 
 	info         alpaca.DeviceInfo
 	driver       alpaca.DriverInfo
@@ -42,7 +42,7 @@ func NewDomeSimulator(number int, db *bolt.DB, tmpl *template.Template, logger l
 		return nil, fmt.Errorf("failed to create store: %v", err)
 	}
 
-	config, err := store.GetDomeConfig()
+	config, err := store.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dome config: %v", err)
 	}
@@ -235,7 +235,7 @@ func (d *DomeSimulator) SetPark() error {
 	d.config.ParkPosition = uint(d.status.Azimuth)
 	d.status.AtPark = true
 
-	return d.store.SetDomeConfig(d.config)
+	return d.store.SetConfig(d.config)
 }
 
 func (d *DomeSimulator) SetShutter(cmd alpaca.ShutterCommand) error {
@@ -255,7 +255,7 @@ func (d *DomeSimulator) SetShutter(cmd alpaca.ShutterCommand) error {
 func (d *DomeSimulator) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		cfg, err := d.store.GetDomeConfig()
+		cfg, err := d.store.GetConfig()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -271,7 +271,7 @@ func (d *DomeSimulator) HandleSetup(w http.ResponseWriter, r *http.Request) {
 
 		d.logger.Infof("Setting dome config: %+v", cfg)
 		d.config = cfg
-		if err := d.store.SetDomeConfig(cfg); err != nil {
+		if err := d.store.SetConfig(cfg); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -283,9 +283,9 @@ func (d *DomeSimulator) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (d *DomeSimulator) renderSetupForm(w http.ResponseWriter, cfg DomeConfig, success bool, err string) {
+func (d *DomeSimulator) renderSetupForm(w http.ResponseWriter, cfg Config, success bool, err string) {
 	data := struct {
-		DomeConfig
+		Config
 		Success bool
 		Error   string
 	}{cfg, success, err}
@@ -296,29 +296,29 @@ func (d *DomeSimulator) renderSetupForm(w http.ResponseWriter, cfg DomeConfig, s
 	}
 }
 
-func parseDomeSetupForm(r *http.Request) (DomeConfig, error) {
+func parseDomeSetupForm(r *http.Request) (Config, error) {
 	if err := r.ParseForm(); err != nil {
-		return DomeConfig{}, fmt.Errorf("error parsing form: %v", err)
+		return Config{}, fmt.Errorf("error parsing form: %v", err)
 	}
 
 	homePosition, err := getFormUint(r, "home-position")
 	if err != nil {
-		return DomeConfig{}, err
+		return Config{}, err
 	}
 	parkPosition, err := getFormUint(r, "park-position")
 	if err != nil {
-		return DomeConfig{}, err
+		return Config{}, err
 	}
 	shutterTimeout, err := getFormUint(r, "shutter-timeout")
 	if err != nil {
-		return DomeConfig{}, err
+		return Config{}, err
 	}
 	ticksPerRevolution, err := getFormUint(r, "ticks-per-rev")
 	if err != nil {
-		return DomeConfig{}, err
+		return Config{}, err
 	}
 
-	return DomeConfig{
+	return Config{
 		HomePosition:   homePosition,
 		ParkPosition:   parkPosition,
 		ShutterTimeout: shutterTimeout,

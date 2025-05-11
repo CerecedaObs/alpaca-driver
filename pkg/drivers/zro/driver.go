@@ -4,7 +4,6 @@ import (
 	"alpaca/pkg/alpaca"
 	"fmt"
 	"html/template"
-	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -15,25 +14,21 @@ import (
 )
 
 const (
-	domeUID       = "621ca2e0-399a-43f6-b9e7-e6575d953508"
+	// TODO: domeUID should be unique for each device.
+	domeUID       = "0a0af300-b0fc-4178-b758-caa109fc836f"
 	deviceName    = "ZRO Dome"
 	deviceType    = "Dome"
 	driverName    = "ZRO Dome Driver"
 	driverVersion = "1.0"
 )
 
-var (
-	ErrNotConnected   = fmt.Errorf("MQTT client is not connected")
-	ErrNotImplemented = fmt.Errorf("not implemented")
-)
+type connState int
 
-// Normalize the angle to the range [0, 360)
-func normalizeAngle(angle float64) float64 {
-	for angle < 0 {
-		angle += 360
-	}
-	return math.Mod(angle+360, 360)
-}
+const (
+	connStateDisconnected connState = iota
+	connStateConnecting
+	connStateConnected
+)
 
 // createMQTTClient initializes and returns a new MQTT client using the configuration
 // retrieved from the provided alpaca.Store. It allows overriding the MQTT broker,
@@ -54,16 +49,16 @@ func createMQTTClient(cfg MQTTConfig) (mqtt.Client, error) {
 
 // Driver represents the ZRO dome Alpaca driver.
 type Driver struct {
-	number int // Driver number
-	tmpl   *template.Template
-	store  *store      // Store for configuration
-	client mqtt.Client // MQTT client
-	dome   *ZRO
-
-	connected  bool // True if the MQTT client is connected
-	connecting bool // True if the MQTT client is connecting
-
+	number int                // Driver number
+	store  *store             // Configuration store
+	tmpl   *template.Template // HTML template for rendering the setup form
+	state  connState          // Connection state
+	slaved bool               // Slaved state
 	logger log.FieldLogger
+
+	// The MQTT client and the controller are created when the driver is connected
+	client mqtt.Client // MQTT client
+	dome   *Dome       // ZRO dome controller
 }
 
 func NewDriver(number int, db *bolt.DB, tmpl *template.Template, logger log.FieldLogger) (*Driver, error) {
@@ -73,59 +68,69 @@ func NewDriver(number int, db *bolt.DB, tmpl *template.Template, logger log.Fiel
 	}
 
 	dome := Driver{
+		number: number,
 		tmpl:   tmpl,
 		store:  store,
-		number: number,
-		logger: log.WithFields(log.Fields{"component": "ZRO"}),
+		state:  connStateDisconnected,
+		logger: logger,
 	}
 
 	return &dome, nil
 }
 
 func (d *Driver) Close() {
-	if d.client.IsConnected() {
-		d.client.Disconnect(0)
+	d.logger.Info("Closing ZRO driver")
+
+	if d.state == connStateDisconnected {
+		return
+	}
+	if err := d.Disconnect(); err != nil {
+		d.logger.Errorf("failed to disconnect: %v", err)
 	}
 }
 
 func (d *Driver) Connect() error {
-	d.connecting = true
-
-	config, err := d.store.GetDomeConfig()
+	config, err := d.store.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get dome config: %v", err)
 	}
+
+	if d.state != connStateDisconnected {
+		return fmt.Errorf("driver is already connected")
+	}
+
+	d.state = connStateConnecting
 
 	client, err := createMQTTClient(config.MQTTConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create MQTT client: %v", err)
 	}
 
-	log.Info("Connected to MQTT broker")
-
 	d.client = client
-	d.connecting = false
-	d.connected = true
+	d.state = connStateConnected
 
+	d.logger.Info("Connected to MQTT broker")
+
+	return nil
+}
+
+func (d *Driver) Disconnect() error {
+	if d.state != connStateConnected {
+		return ErrNotConnected
+	}
+
+	d.client.Disconnect(100)
+	d.state = connStateDisconnected
+	d.logger.Info("Disconnected from MQTT broker")
 	return nil
 }
 
 func (d *Driver) Connecting() bool {
-	return d.connecting
+	return d.state == connStateConnecting
 }
 
 func (d *Driver) Connected() bool {
-	return d.connected
-}
-
-func (d *Driver) Disconnect() error {
-	if !d.connected {
-		return ErrNotConnected
-	}
-
-	d.client.Disconnect(0)
-	d.connected = false
-	return nil
+	return d.state == connStateConnected
 }
 
 func (d *Driver) GetState() []alpaca.StateProperty {
@@ -136,7 +141,7 @@ func (d *Driver) GetState() []alpaca.StateProperty {
 		},
 	}
 
-	if d.connected {
+	if d.state == connStateConnected {
 		props = append(props, d.Status().ToProperties()...)
 	}
 
@@ -144,6 +149,10 @@ func (d *Driver) GetState() []alpaca.StateProperty {
 }
 
 func (d *Driver) Status() alpaca.DomeStatus {
+	if d.state != connStateConnected {
+		return alpaca.DomeStatus{}
+	}
+
 	st := d.dome.GetStatus()
 
 	status := alpaca.DomeStatus{
@@ -151,7 +160,7 @@ func (d *Driver) Status() alpaca.DomeStatus {
 		AtHome:   st.AtHome,
 		AtPark:   st.AtHome, // TODO: Implement park status
 		Slewing:  st.Slewing,
-		Slaved:   st.Slewing,
+		Slaved:   d.slaved,
 		Altitude: 0.0,
 		Shutter:  alpaca.ShutterOpen,
 	}
@@ -165,7 +174,7 @@ func (d *Driver) Capabilities() alpaca.DomeCapabilities {
 		CanSetAltitude: false,
 		CanSetAzimuth:  true,
 		CanSetPark:     true,
-		CanSetShutter:  d.dome.config.UseShutter,
+		CanSetShutter:  true,
 		CanSlave:       true,
 		CanSyncAzimuth: true,
 	}
@@ -189,23 +198,23 @@ func (d *Driver) DriverInfo() alpaca.DriverInfo {
 }
 
 func (d *Driver) SlewToAzimuth(az float64) error {
-	if !d.connected {
+	if d.state != connStateConnected {
 		return ErrNotConnected
 	}
 
 	return d.dome.SlewToAzimuth(az)
 }
 
-func (d *Driver) SlewToAltitude(altitude float64) error {
-	return alpaca.ErrPropertyNotImplemented
-}
-
 func (d *Driver) SyncToAzimuth(azimuth float64) error {
-	if !d.connected {
+	if d.state != connStateConnected {
 		return alpaca.ErrNotConnected
 	}
 	d.logger.Warn("SyncToAzimuth not implemented")
 	return nil
+}
+
+func (d *Driver) SlewToAltitude(altitude float64) error {
+	return alpaca.ErrPropertyNotImplemented
 }
 
 func (d *Driver) SyncToAltitude(altitude float64) error {
@@ -213,7 +222,7 @@ func (d *Driver) SyncToAltitude(altitude float64) error {
 }
 
 func (d *Driver) AbortSlew() error {
-	if !d.connected {
+	if d.state != connStateConnected {
 		return ErrNotConnected
 	}
 
@@ -221,7 +230,7 @@ func (d *Driver) AbortSlew() error {
 }
 
 func (d *Driver) FindHome() error {
-	if !d.connected {
+	if d.state != connStateConnected {
 		return ErrNotConnected
 	}
 
@@ -229,7 +238,7 @@ func (d *Driver) FindHome() error {
 }
 
 func (d *Driver) Park() error {
-	if !d.connected {
+	if d.state != connStateConnected {
 		return ErrNotConnected
 	}
 
@@ -237,7 +246,7 @@ func (d *Driver) Park() error {
 }
 
 func (d *Driver) SetPark() error {
-	if !d.connected {
+	if d.state != connStateConnected {
 		return ErrNotConnected
 	}
 
@@ -246,19 +255,14 @@ func (d *Driver) SetPark() error {
 }
 
 func (d *Driver) SetSlaved(slaved bool) error {
-	if !d.connected {
-		return alpaca.ErrNotConnected
-	}
 	d.logger.Infof("Dome slaved: %v", slaved)
+	d.slaved = slaved
 	return nil
 }
 
 func (d *Driver) SetShutter(command alpaca.ShutterCommand) error {
-	if !d.connected {
+	if d.state != connStateConnected {
 		return ErrNotConnected
-	}
-	if !d.dome.config.UseShutter {
-		return fmt.Errorf("shutter not supported")
 	}
 
 	var cmd ShutterCommand
@@ -276,7 +280,7 @@ func (d *Driver) SetShutter(command alpaca.ShutterCommand) error {
 func (d *Driver) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		cfg, err := d.store.GetDomeConfig()
+		cfg, err := d.store.GetConfig()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -291,7 +295,7 @@ func (d *Driver) HandleSetup(w http.ResponseWriter, r *http.Request) {
 		}
 
 		d.logger.Infof("Setting dome config: %+v", cfg)
-		if err := d.store.SetDomeConfig(cfg); err != nil {
+		if err := d.store.SetConfig(cfg); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

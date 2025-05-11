@@ -103,10 +103,10 @@ func handleAPI(handler func(r *http.Request) (any, error)) http.Handler {
 			response.ErrorNumber = e.Number
 			response.ErrorMessage = e.Message
 		} else if errors.Is(err, errBadRequest) {
-			http.Error(w, "Bad request", http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		} else if err != nil {
-			http.Error(w, "Internal error", http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		} else {
 			response.Value = value

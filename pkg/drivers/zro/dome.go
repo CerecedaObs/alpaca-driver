@@ -1,15 +1,25 @@
+// This code does not depend on any other code in the repository.
+// It is a standalone implementation of the ZRO dome controller driver.
+// It uses the Paho MQTT library to communicate with the ZRO dome controller
+// and handles the configuration, telemetry, and commands for the dome.
+// The code is structured to be easily integrated into a larger system,
+// with logging and error handling in place.
+
 package zro
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 )
+
+var ErrNotConnected = fmt.Errorf("driver is not connected")
 
 type Direction int
 
@@ -56,9 +66,57 @@ const (
 	cmdHumidity    cmdCode = 'u' // Read humidity percentage
 	cmdHelp        cmdCode = 'h' // Return a list of available commands
 
-	cmdUnknown cmdCode = '?' // Unknown command
+	// cmdUnknown cmdCode = '?' // Unknown command
 )
 
+type MQTTConfig struct {
+	Host      string
+	Username  string
+	Password  string
+	TopicRoot string // Root topic for the ZRO dome controller
+}
+
+type Config struct {
+	MQTTConfig
+
+	TicksPerTurn   int     // Encoder ticks per dome revolution
+	Tolerance      int     // Tolerance in encoder ticks
+	HomePosition   float64 // Home position in degrees
+	ParkPosition   float64 // Park position in degrees
+	AzimuthTimeout int     // Azimuth timeout in seconds
+	MaxSpeed       int     // Maximum speed in encoder ticks per second
+	MinSpeed       int     // Minimum speed in encoder ticks per second
+	BrakeSpeed     int     // Brake speed in encoder ticks per second
+	VelTimeout     int     // Velocity timeout in seconds
+	ShortDistance  int     // Short distance in encoder ticks
+	ParkOnShutter  bool    // True if the dome should park on shutter
+	ShutterTimeout int     // Shutter timeout in seconds
+	UseShutter     bool    // True if the shutter is used
+}
+
+var defaultConfig = Config{
+	MQTTConfig: MQTTConfig{
+		Host:      "tcp://localhost:1883",
+		Username:  "",
+		Password:  "",
+		TopicRoot: "/ZRO",
+	},
+	TicksPerTurn:   10476,
+	Tolerance:      4,
+	HomePosition:   0,
+	ParkPosition:   0,
+	AzimuthTimeout: 20000,
+	MaxSpeed:       200,
+	MinSpeed:       30,
+	BrakeSpeed:     80,
+	VelTimeout:     10,
+	ShortDistance:  100,
+	ParkOnShutter:  false,
+	ShutterTimeout: 0,
+	UseShutter:     true,
+}
+
+// Status represents the status of the ZRO dome controller.
 type Status struct {
 	Position int       // Azimuth position in encoder ticks
 	AtHome   bool      // True if the dome is at home position
@@ -111,9 +169,17 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// ZRO represents the ZRO dome controller.
-// The dome is controlled by MQTT messages.
-type ZRO struct {
+// Normalize the an angle in degrees to the range [0, 360)
+func normalizeAngle(angle float64) float64 {
+	for angle < 0 {
+		angle += 360
+	}
+	return math.Mod(angle+360, 360)
+}
+
+// Dome represents the ZRO dome controller.
+// It is controlled via MQTT messages.
+type Dome struct {
 	client mqtt.Client // MQTT client
 
 	status Status
@@ -125,8 +191,8 @@ type ZRO struct {
 	// shutterLink bool   // True if the shutter is linked to the dome
 }
 
-func NewZRO(client mqtt.Client, config Config, logger log.FieldLogger) *ZRO {
-	return &ZRO{
+func NewDome(client mqtt.Client, config Config, logger log.FieldLogger) *Dome {
+	return &Dome{
 		client:       client,
 		config:       config,
 		responseChan: make(chan Response, 1),
@@ -134,20 +200,19 @@ func NewZRO(client mqtt.Client, config Config, logger log.FieldLogger) *ZRO {
 	}
 }
 
-func (d *ZRO) degreesToTicks(degrees float64) int {
-	return int(normalizeAngle(degrees) * float64(d.config.TicksPerTurn) / 360.0)
+func (d *Dome) degreesToTicks(degrees float64) int {
+	return int(normalizeAngle(degrees-d.config.HomePosition) * float64(d.config.TicksPerTurn) / 360.0)
 }
 
-func (d *ZRO) ticksToDegrees(ticks int) float64 {
-	return float64(ticks) * 360.0 / float64(d.config.TicksPerTurn)
+func (d *Dome) ticksToDegrees(ticks int) float64 {
+	return float64(ticks)*360.0/float64(d.config.TicksPerTurn) + d.config.HomePosition
 }
 
 // Run connects to the ZRO dome controller and subscribes to the necessary topics.
 // When the context is cancelled, it unsubscribes from the topics and disconnects.
-func (d *ZRO) Run(ctx context.Context) {
+func (d *Dome) Run(ctx context.Context) error {
 	if !d.client.IsConnected() {
-		d.logger.Error("MQTT client is not connected")
-		return
+		return fmt.Errorf("MQTT client is not connected")
 	}
 
 	root := d.config.MQTTConfig.TopicRoot
@@ -155,54 +220,53 @@ func (d *ZRO) Run(ctx context.Context) {
 	// Subscribe to telemetry topic
 	telemetryTopic := root + "/telemetry"
 	if token := d.client.Subscribe(telemetryTopic, 0, d.telemetryHandler); token.Wait() && token.Error() != nil {
-		d.logger.Errorf("Failed to subscribe to telemetry topic: %v", token.Error())
-		return
+		return fmt.Errorf("failed to subscribe to telemetry topic: %v", token.Error())
 	}
 	defer d.client.Unsubscribe(telemetryTopic)
 
 	// Subscribe to battery topic
 	batteryTopic := root + "/battery"
 	if token := d.client.Subscribe(batteryTopic, 0, d.batteryHandler); token.Wait() && token.Error() != nil {
-		d.logger.Errorf("Failed to subscribe to battery topic: %v", token.Error())
-		return
+		return fmt.Errorf("failed to subscribe to battery topic: %v", token.Error())
 	}
 	defer d.client.Unsubscribe(batteryTopic)
 
 	// Subscribe to responses topic
 	responseTopic := root + "/responses"
 	if token := d.client.Subscribe(responseTopic, 0, d.responseHandler); token.Wait() && token.Error() != nil {
-		d.logger.Errorf("Failed to subscribe to responses topic: %v", token.Error())
-		return
+		return fmt.Errorf("failed to subscribe to responses topic: %v", token.Error())
 	}
 	defer d.client.Unsubscribe(responseTopic)
 
 	// Connect to the shutter
 	if d.config.UseShutter {
 		if err := d.sendCommand(string(cmdConnectShutter)); err != nil {
-			d.logger.Errorf("Failed to send connect shutter command: %v", err)
-			return
+			return fmt.Errorf("failed to send connect shutter command: %v", err)
 		}
 		defer d.sendCommand(string(cmdDisconnectShutter))
 	}
 
 	// Read status, firmware version and battery status
 	if err := d.sendCommand(string(cmdStatus)); err != nil {
-		d.logger.Errorf("Failed to send status command: %v", err)
-		return
+		return fmt.Errorf("failed to send status command: %v", err)
 	}
 	if err := d.sendCommand(string(cmdVersion)); err != nil {
-		d.logger.Errorf("Failed to send version command: %v", err)
-		return
+		return fmt.Errorf("failed to send version command: %v", err)
 	}
 	if err := d.sendCommand(string(cmdBattery)); err != nil {
-		d.logger.Errorf("Failed to send battery command: %v", err)
-		return
+		return fmt.Errorf("failed to send battery command: %v", err)
+	}
+
+	// Set the configuration
+	if err := d.setConfig(d.config); err != nil {
+		return fmt.Errorf("failed to set configuration: %v", err)
 	}
 
 	<-ctx.Done()
+	return nil
 }
 
-func (d *ZRO) sendCommand(cmd string) error {
+func (d *Dome) sendCommand(cmd string) error {
 	if !d.client.IsConnected() {
 		return ErrNotConnected
 	}
@@ -238,8 +302,38 @@ func (d *ZRO) sendCommand(cmd string) error {
 	return nil
 }
 
+// setConfig sends the configuration to the ZRO dome controller.
+// Each parameter is sent as a command with the format "_L<param>=<value>;"
+// All values are integers. Example: "_LTICK=1000;"
+func (d *Dome) setConfig(config Config) error {
+	if !d.client.IsConnected() {
+		return ErrNotConnected
+	}
+
+	cfgMap := map[string]int{
+		"TICK": config.TicksPerTurn,
+		"TOLE": config.Tolerance,
+		"PKPO": d.degreesToTicks(config.ParkPosition),
+		"POSH": d.degreesToTicks(config.HomePosition),
+		"AZTO": config.AzimuthTimeout,
+		"MXSP": config.MaxSpeed,
+		"MNSP": config.MinSpeed,
+		"BKSP": config.BrakeSpeed,
+		"VLTO": config.VelTimeout,
+		"SHDS": config.ShortDistance,
+		"ENDV": boolToInt(config.ParkOnShutter),
+	}
+
+	for param, value := range cfgMap {
+		if err := d.sendCommand(fmt.Sprintf("L%s=%d", param, value)); err != nil {
+			return fmt.Errorf("failed to send config parameter %s: %v", param, err)
+		}
+	}
+	return nil
+}
+
 // telemetryHandler processes the telemetry messages.
-func (d *ZRO) telemetryHandler(client mqtt.Client, msg mqtt.Message) {
+func (d *Dome) telemetryHandler(client mqtt.Client, msg mqtt.Message) {
 	var telemetry telemetryMsg
 	if err := json.Unmarshal(msg.Payload(), &telemetry); err != nil {
 		d.logger.Errorf("Failed to unmarshal telemetry message: %v", err)
@@ -261,7 +355,7 @@ func (d *ZRO) telemetryHandler(client mqtt.Client, msg mqtt.Message) {
 }
 
 // batteryHandler processes the battery messages.
-func (d *ZRO) batteryHandler(client mqtt.Client, msg mqtt.Message) {
+func (d *Dome) batteryHandler(client mqtt.Client, msg mqtt.Message) {
 	var battery batteryMsg
 	if err := json.Unmarshal(msg.Payload(), &battery); err != nil {
 		d.logger.Errorf("Failed to unmarshal battery message: %v", err)
@@ -274,7 +368,7 @@ func (d *ZRO) batteryHandler(client mqtt.Client, msg mqtt.Message) {
 	d.status.BatteryCurrent = battery.Current
 }
 
-func (d *ZRO) responseHandler(client mqtt.Client, msg mqtt.Message) {
+func (d *Dome) responseHandler(client mqtt.Client, msg mqtt.Message) {
 	resp, err := parseResponse(string(msg.Payload()))
 	if err != nil {
 		d.logger.Errorf("Failed to parse response: %v", err)
@@ -342,71 +436,45 @@ func parseResponse(msg string) (Response, error) {
 	return resp, nil
 }
 
-// SetConfig sends the configuration to the ZRO dome controller.
-// Each parameter is sent as a command with the format "_L<param>=<value>;"
-// All values are integers. Example: "_LTICK=1000;"
-func (d *ZRO) SetConfig(config Config) error {
-	if !d.client.IsConnected() {
-		return ErrNotConnected
-	}
-
-	cfgMap := map[string]int{
-		"TICK": config.TicksPerTurn,
-		"TOLE": config.Tolerance,
-		"PKPO": d.degreesToTicks(config.ParkPosition),
-		"POSH": d.degreesToTicks(config.HomePosition),
-		"AZTO": config.AzimuthTimeout,
-		"MXSP": config.MaxSpeed,
-		"MNSP": config.MinSpeed,
-		"BKSP": config.BrakeSpeed,
-		"VLTO": config.VelTimeout,
-		"SHDS": config.ShortDistance,
-		"ENDV": boolToInt(config.ParkOnShutter),
-	}
-
-	for param, value := range cfgMap {
-		if err := d.sendCommand(fmt.Sprintf("L%s=%d", param, value)); err != nil {
-			return fmt.Errorf("failed to send config parameter %s: %v", param, err)
-		}
-	}
-	return nil
-}
-
-func (d *ZRO) GetStatus() Status {
+func (d *Dome) GetStatus() Status {
 	return d.status
 }
 
-func (d *ZRO) SlewToAzimuth(az float64) error {
+func (d *Dome) SlewToAzimuth(az float64) error {
 	ticks := d.degreesToTicks(az)
 	return d.sendCommand(fmt.Sprintf("G=%d", ticks))
 }
 
-func (d *ZRO) AbortSlew() error {
+func (d *Dome) AbortSlew() error {
 	return d.sendCommand(string(cmdAbort))
 }
 
-func (d *ZRO) FindHome() error {
+func (d *Dome) FindHome() error {
 	return d.sendCommand(string(cmdHome))
 }
 
-func (d *ZRO) Park() error {
+func (d *Dome) Park() error {
 	return d.sendCommand(string(cmdPark))
 }
 
-func (d *ZRO) SetPark() error {
+func (d *Dome) SetPark() error {
 	return d.sendCommand(string(cmdSetPark))
 }
 
-func (d *ZRO) SetShutter(command ShutterCommand) error {
-	var cmd string
+func (d *Dome) SetShutter(command ShutterCommand) error {
+	if !d.config.UseShutter {
+		return fmt.Errorf("shutter not supported")
+	}
+
+	var cmd cmdCode
 	switch command {
 	case ShutterOpen:
-		cmd = string(cmdOpenShutter)
+		cmd = cmdOpenShutter
 	case ShutterClose:
-		cmd = string(cmdCloseShutter)
+		cmd = cmdCloseShutter
 	default:
 		return fmt.Errorf("invalid shutter command: %d", command)
 	}
 
-	return d.sendCommand(cmd)
+	return d.sendCommand(string(cmd))
 }
