@@ -48,7 +48,7 @@ You can setup the MQTT client by environment variables or by passing them as com
 
 Once the server is running, open your web browser and navigate to:
 
-[http://localhost:8090/setup](http://localhost:8090/setup)
+[http://localhost:8090/api/v1/dome/1/setup](http://localhost:8090/api/v1/dome/1/setup)
 
 This page provides a web-based interface for configuring the Alpaca server.
 

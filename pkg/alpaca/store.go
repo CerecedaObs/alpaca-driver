@@ -31,6 +31,7 @@ func NewStore(db *bolt.DB) (*Store, error) {
 func (s *Store) setDefaults() error {
 	if _, err := s.GetConfig(); err != nil {
 		log.Infof("Setting default config")
+		return s.SetConfig(Config{})
 	}
 
 	return nil
