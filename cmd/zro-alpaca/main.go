@@ -2,7 +2,6 @@ package main
 
 import (
 	"alpaca/pkg/alpaca"
-	"alpaca/pkg/drivers/dome_simulator"
 	"alpaca/pkg/drivers/zro"
 	"alpaca/templates"
 	"context"
@@ -42,11 +41,11 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create store: %v", err)
 	}
 
-	simDome, err := dome_simulator.NewDomeSimulator(0, db, tmpl, log.WithField("device", "dome"))
-	if err != nil {
-		return fmt.Errorf("failed to create dome simulator: %v", err)
-	}
-	defer simDome.Close()
+	// simDome, err := dome_simulator.NewDomeSimulator(0, db, tmpl, log.WithField("device", "dome"))
+	// if err != nil {
+	// 	return fmt.Errorf("failed to create dome simulator: %v", err)
+	// }
+	// defer simDome.Close()
 
 	zroDome, err := zro.NewDriver(1, db, tmpl, log.WithField("device", "zro"))
 	if err != nil {
@@ -62,7 +61,7 @@ func run(c *cli.Context) error {
 	}
 
 	devices := []alpaca.Device{
-		simDome,
+		// simDome,
 		zroDome,
 	}
 	server := alpaca.NewServer(serverDesc, devices, store, tmpl)

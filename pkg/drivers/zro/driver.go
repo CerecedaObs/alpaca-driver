@@ -67,7 +67,7 @@ func NewDriver(number int, db *bolt.DB, tmpl *template.Template, logger log.Fiel
 		return nil, fmt.Errorf("failed to create store: %v", err)
 	}
 
-	dome := Driver{
+	driver := Driver{
 		number: number,
 		tmpl:   tmpl,
 		store:  store,
@@ -75,7 +75,7 @@ func NewDriver(number int, db *bolt.DB, tmpl *template.Template, logger log.Fiel
 		logger: logger,
 	}
 
-	return &dome, nil
+	return &driver, nil
 }
 
 func (d *Driver) Close() {
@@ -107,6 +107,7 @@ func (d *Driver) Connect() error {
 	}
 
 	d.client = client
+	d.dome = NewDome(client, config, d.logger)
 	d.state = connStateConnected
 
 	d.logger.Info("Connected to MQTT broker")

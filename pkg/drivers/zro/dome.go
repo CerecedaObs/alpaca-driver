@@ -325,7 +325,7 @@ func (d *Dome) setConfig(config Config) error {
 	}
 
 	for param, value := range cfgMap {
-		if err := d.sendCommand(fmt.Sprintf("L%s=%d", param, value)); err != nil {
+		if err := d.sendCommand(fmt.Sprintf("%c%s=%d", cmdLoad, param, value)); err != nil {
 			return fmt.Errorf("failed to send config parameter %s: %v", param, err)
 		}
 	}
@@ -442,7 +442,7 @@ func (d *Dome) GetStatus() Status {
 
 func (d *Dome) SlewToAzimuth(az float64) error {
 	ticks := d.degreesToTicks(az)
-	return d.sendCommand(fmt.Sprintf("G=%d", ticks))
+	return d.sendCommand(fmt.Sprintf("%c=%d", cmdGoto, ticks))
 }
 
 func (d *Dome) AbortSlew() error {
