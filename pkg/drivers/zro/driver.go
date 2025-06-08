@@ -2,6 +2,7 @@ package zro
 
 import (
 	"alpaca/pkg/alpaca"
+	"context"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -57,8 +58,9 @@ type Driver struct {
 	logger log.FieldLogger
 
 	// The MQTT client and the controller are created when the driver is connected
-	client mqtt.Client // MQTT client
-	dome   *Dome       // ZRO dome controller
+	client mqtt.Client         // MQTT client
+	dome   *Dome               // ZRO dome controller
+	cancel context.CancelFunc  // Context cancel function
 }
 
 func NewDriver(number int, db *bolt.DB, tmpl *template.Template, logger log.FieldLogger) (*Driver, error) {
@@ -82,6 +84,10 @@ func (d *Driver) Close() {
 	d.logger.Info("Closing ZRO driver")
 
 	if d.state == connStateDisconnected {
+		if d.cancel != nil {
+			d.cancel()
+			d.cancel = nil
+		}
 		return
 	}
 	if err := d.Disconnect(); err != nil {
@@ -108,6 +114,13 @@ func (d *Driver) Connect() error {
 
 	d.client = client
 	d.dome = NewDome(client, config, d.logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	d.cancel = cancel
+	go func() {
+		d.dome.Run(ctx)
+	}()
+
 	d.state = connStateConnected
 
 	d.logger.Info("Connected to MQTT broker")
@@ -120,6 +133,10 @@ func (d *Driver) Disconnect() error {
 		return ErrNotConnected
 	}
 
+	if d.cancel != nil {
+		d.cancel()
+		d.cancel = nil
+	}
 	d.client.Disconnect(100)
 	d.state = connStateDisconnected
 	d.logger.Info("Disconnected from MQTT broker")

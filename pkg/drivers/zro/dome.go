@@ -196,7 +196,7 @@ func NewDome(client mqtt.Client, config Config, logger log.FieldLogger) *Dome {
 		client:       client,
 		config:       config,
 		responseChan: make(chan Response, 1),
-		logger:       logger.WithField("component", "ZRO"),
+		logger:       logger,
 	}
 }
 
@@ -263,6 +263,7 @@ func (d *Dome) Run(ctx context.Context) error {
 	}
 
 	<-ctx.Done()
+	d.logger.Info("Stopping ZRO dome controller")
 	return nil
 }
 
@@ -374,17 +375,15 @@ func (d *Dome) responseHandler(client mqtt.Client, msg mqtt.Message) {
 		d.logger.Errorf("Failed to parse response: %v", err)
 		return
 	}
+	d.logger.Debugf("Response received: %+v", resp)
 
 	// Handle the response based on the command
 	switch resp.Code {
 	case cmdStatus:
 	case cmdBattery:
-		// Ignore those responses
 	case cmdVersion:
 		d.status.Version = strings.Trim(resp.Value.(string), "()")
 		d.logger.Infof("Dome controller firmware version: %s", d.status.Version)
-	default:
-		d.logger.Warnf("Unknown response command: %c", resp.Code)
 	}
 
 	// Attempt to send the response to the channel with a timeout
@@ -422,9 +421,9 @@ func parseResponse(msg string) (Response, error) {
 	cmd := strings.Trim(fields[2], ";")
 
 	parts := strings.Split(cmd, "=")
-	if len(parts[0]) != 1 {
-		return resp, fmt.Errorf("invalid command format: %s", msg)
-	}
+	// if len(parts[0]) != 1 {
+	// 	return resp, fmt.Errorf("invalid command format: %s", msg)
+	// }
 	resp.Code = cmdCode(parts[0][0])
 
 	if len(parts) == 2 {
