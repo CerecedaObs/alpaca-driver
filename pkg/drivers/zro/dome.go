@@ -87,6 +87,7 @@ type Config struct {
 	MaxSpeed       int     // Maximum speed in encoder ticks per second
 	MinSpeed       int     // Minimum speed in encoder ticks per second
 	BrakeSpeed     int     // Brake speed in encoder ticks per second
+	EncoderDiv     int     // Encoder divisor (for high-resolution encoders)
 	VelTimeout     int     // Velocity timeout in seconds
 	ShortDistance  int     // Short distance in encoder ticks
 	ParkOnShutter  bool    // True if the dome should park on shutter
@@ -114,6 +115,32 @@ var defaultConfig = Config{
 	ParkOnShutter:  false,
 	ShutterTimeout: 0,
 	UseShutter:     true,
+	EncoderDiv:     1, // Default encoder divisor
+}
+
+func (c *Config) Validate() error {
+	if c.TicksPerTurn <= 0 {
+		return fmt.Errorf("ticks per turn must be greater than 0")
+	}
+	if c.Tolerance < 0 {
+		return fmt.Errorf("tolerance must be non-negative")
+	}
+	if c.AzimuthTimeout <= 0 {
+		return fmt.Errorf("azimuth timeout must be greater than 0")
+	}
+	if c.MaxSpeed <= 0 {
+		return fmt.Errorf("maximum speed must be greater than 0")
+	}
+	if c.MinSpeed <= 0 {
+		return fmt.Errorf("minimum speed must be greater than 0")
+	}
+	if c.BrakeSpeed <= 0 {
+		return fmt.Errorf("brake speed must be greater than 0")
+	}
+	if c.EncoderDiv <= 0 {
+		return fmt.Errorf("encoder divisor must be greater than 0")
+	}
+	return nil
 }
 
 // Status represents the status of the ZRO dome controller.
@@ -191,13 +218,17 @@ type Dome struct {
 	// shutterLink bool   // True if the shutter is linked to the dome
 }
 
-func NewDome(client mqtt.Client, config Config, logger log.FieldLogger) *Dome {
+func NewDome(client mqtt.Client, config Config, logger log.FieldLogger) (*Dome, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %v", err)
+	}
+
 	return &Dome{
 		client:       client,
 		config:       config,
 		responseChan: make(chan Response, 1),
 		logger:       logger,
-	}
+	}, nil
 }
 
 func (d *Dome) degreesToTicks(degrees float64) int {
@@ -315,14 +346,14 @@ func (d *Dome) setConfig(config Config) error {
 		"TICK": config.TicksPerTurn,
 		"TOLE": config.Tolerance,
 		"PKPO": d.degreesToTicks(config.ParkPosition),
-		"POSH": d.degreesToTicks(config.HomePosition),
 		"AZTO": config.AzimuthTimeout,
 		"MXSP": config.MaxSpeed,
 		"MNSP": config.MinSpeed,
 		"BKSP": config.BrakeSpeed,
 		"VLTO": config.VelTimeout,
 		"SHDS": config.ShortDistance,
-		"ENDV": boolToInt(config.ParkOnShutter),
+		"POSH": boolToInt(config.ParkOnShutter),
+		"ENDV": config.EncoderDiv, // Encoder divisor for the shutter
 	}
 
 	for param, value := range cfgMap {

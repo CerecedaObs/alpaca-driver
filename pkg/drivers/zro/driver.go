@@ -58,9 +58,9 @@ type Driver struct {
 	logger log.FieldLogger
 
 	// The MQTT client and the controller are created when the driver is connected
-	client mqtt.Client         // MQTT client
-	dome   *Dome               // ZRO dome controller
-	cancel context.CancelFunc  // Context cancel function
+	client mqtt.Client        // MQTT client
+	dome   *Dome              // ZRO dome controller
+	cancel context.CancelFunc // Context cancel function
 }
 
 func NewDriver(number int, db *bolt.DB, tmpl *template.Template, logger log.FieldLogger) (*Driver, error) {
@@ -113,7 +113,12 @@ func (d *Driver) Connect() error {
 	}
 
 	d.client = client
-	d.dome = NewDome(client, config, d.logger)
+	d.dome, err = NewDome(client, config, d.logger)
+	if err != nil {
+		d.client.Disconnect(100)
+		d.state = connStateDisconnected
+		return fmt.Errorf("failed to create ZRO dome controller: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	d.cancel = cancel
@@ -343,7 +348,7 @@ func parseDomeSetupForm(r *http.Request) (Config, error) {
 		return Config{}, fmt.Errorf("error parsing form: %v", err)
 	}
 
-	cfg := Config{}
+	cfg := defaultConfig
 	cfg.Host = r.FormValue("mqtt-host")
 	cfg.Username = r.FormValue("mqtt-username")
 	cfg.Password = r.FormValue("mqtt-password")
