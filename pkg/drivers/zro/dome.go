@@ -41,7 +41,7 @@ type cmdCode uint8
 const (
 	// Configuration commands
 	cmdLoad    cmdCode = 'L' // Load dome configuration parameters
-	cmdSetPark cmdCode = 'P' // Set park coordinates and policy
+	cmdSetPark cmdCode = 'P' // Set park coordinates and policy (it does't work yet)
 	cmdTicks   cmdCode = 'T' // Set the number of ticks per revolution
 
 	// Shutter commands
@@ -488,7 +488,11 @@ func (d *Dome) Park() error {
 }
 
 func (d *Dome) SetPark() error {
-	return d.sendCommand(string(cmdSetPark))
+	// Get current position as the new park position
+	currentTicks := d.status.Position
+
+	// Send the park position using the load command
+	return d.sendCommand(fmt.Sprintf("%c%s=%d", cmdLoad, "PKPO", currentTicks))
 }
 
 func (d *Dome) SetShutter(command ShutterCommand) error {

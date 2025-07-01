@@ -56,7 +56,7 @@ This page provides a web-based interface for configuring the Alpaca server.
 
 - `cmd/zro-alpaca/` – Main application entry point
 - `pkg/alpaca/` – Core Alpaca protocol implementation and device logic
-- `pkg/alpaca/simulators/` – Simulated device implementations
+- `pkg/alpaca/drivers/` – Alpaca device drivers for various hardware
 - `templates/` – Web UI templates for device setup
 
 ## License

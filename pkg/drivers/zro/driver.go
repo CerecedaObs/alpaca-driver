@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -191,15 +192,21 @@ func (d *Driver) Status() alpaca.DomeStatus {
 }
 
 func (d *Driver) Capabilities() alpaca.DomeCapabilities {
+	// Get the configuration to check if shutter is enabled
+	canSetShutter := false
+	if cfg, err := d.store.GetConfig(); err == nil {
+		canSetShutter = cfg.UseShutter
+	}
+
 	return alpaca.DomeCapabilities{
 		CanFindHome:    true,
 		CanPark:        true,
 		CanSetAltitude: false,
 		CanSetAzimuth:  true,
 		CanSetPark:     true,
-		CanSetShutter:  true,
+		CanSetShutter:  canSetShutter,
 		CanSlave:       true,
-		CanSyncAzimuth: true,
+		CanSyncAzimuth: false,
 	}
 }
 
@@ -273,7 +280,24 @@ func (d *Driver) SetPark() error {
 		return ErrNotConnected
 	}
 
-	// TODO: store the park position in the config
+	// Get current dome position
+	status := d.dome.GetStatus()
+	currentAzimuth := math.Round(d.dome.ticksToDegrees(status.Position))
+
+	// Get current config and update park position
+	cfg, err := d.store.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get config: %v", err)
+	}
+
+	cfg.ParkPosition = currentAzimuth
+
+	// Save updated config to database
+	if err := d.store.SetConfig(cfg); err != nil {
+		return fmt.Errorf("failed to save park position: %v", err)
+	}
+
+	d.logger.Infof("Park position set to %.2f degrees", currentAzimuth)
 	return d.dome.SetPark()
 }
 
