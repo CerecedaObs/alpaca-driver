@@ -486,9 +486,6 @@ func parseResponse(msg string) (Response, error) {
 	cmd := strings.Trim(fields[2], ";")
 
 	parts := strings.Split(cmd, "=")
-	// if len(parts[0]) != 1 {
-	// 	return resp, fmt.Errorf("invalid command format: %s", msg)
-	// }
 	resp.Code = cmdCode(parts[0][0])
 
 	if len(parts) == 2 {
