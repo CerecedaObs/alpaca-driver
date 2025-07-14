@@ -35,6 +35,17 @@ const (
 	ShutterClose
 )
 
+type ShutterStatus int
+
+const (
+	ShutterStatusClosed ShutterStatus = iota
+	ShutterStatusOpening
+	ShutterStatusOpen
+	ShutterStatusClosing
+	ShutterStatusAborted
+	ShutterStatusError
+)
+
 type cmdCode uint8
 
 // Dome commands
@@ -159,21 +170,22 @@ type Status struct {
 
 	Version string // Firmware version
 
-	// Shutter  ShutterStatus
-	// ShutterConnected bool
+	Shutter          ShutterStatus // Shutter status
+	ShutterConnected bool          // True if shutter is connected
 }
 
 // telemetryMsg represents the telemetry message received periodically from the
 // ZRO dome controller under the "telemetry" topic.
 type telemetryMsg struct {
-	AzState     int     `json:"az_state"` // State of the azimuth state machine
-	Position    int     `json:"pos"`
-	Home        int     `json:"home"`
-	Dir         int     `json:"dir"`
-	Target      int     `json:"target"`
-	Link        int     `json:"link"`
-	Temperature float32 `json:"temp"`
-	Humidity    float32 `json:"hum"`
+	AzState     int           `json:"az_state"` // State of the azimuth state machine
+	ShState     ShutterStatus `json:"sh_state"`
+	Position    int           `json:"pos"`
+	Home        int           `json:"home"`
+	Dir         int           `json:"dir"`
+	Target      int           `json:"target"`
+	Link        int           `json:"link"`
+	Temperature float32       `json:"temp"`
+	Humidity    float32       `json:"hum"`
 }
 
 // batteryMsg represents the battery message received periodically from the
@@ -223,12 +235,18 @@ func NewDome(client mqtt.Client, config Config, logger log.FieldLogger) (*Dome, 
 		return nil, fmt.Errorf("invalid configuration: %v", err)
 	}
 
-	return &Dome{
+	dome := &Dome{
 		client:       client,
 		config:       config,
 		responseChan: make(chan Response, 1),
 		logger:       logger,
-	}, nil
+	}
+
+	// Initialize shutter status as unknown/closed
+	dome.status.Shutter = ShutterStatusClosed
+	dome.status.ShutterConnected = false
+
+	return dome, nil
 }
 
 func (d *Dome) degreesToTicks(degrees float64) int {
@@ -271,8 +289,9 @@ func (d *Dome) Run(ctx context.Context) error {
 
 	// Connect to the shutter
 	if d.config.UseShutter {
-		if err := d.sendCommand(string(cmdConnectShutter)); err != nil {
-			return fmt.Errorf("failed to send connect shutter command: %v", err)
+		if err := d.connectShutter(); err != nil {
+			d.logger.Warnf("Failed to connect to shutter: %v", err)
+			// Don't return error, continue without shutter
 		}
 		defer d.sendCommand(string(cmdDisconnectShutter))
 	}
@@ -298,7 +317,8 @@ func (d *Dome) Run(ctx context.Context) error {
 	return nil
 }
 
-func (d *Dome) sendCommand(cmd string) error {
+// sendCommandWithTimeout sends a command and waits for response with custom timeout
+func (d *Dome) sendCommandWithTimeout(cmd string, timeout time.Duration) error {
 	if !d.client.IsConnected() {
 		return ErrNotConnected
 	}
@@ -313,7 +333,7 @@ func (d *Dome) sendCommand(cmd string) error {
 		return fmt.Errorf("failed to publish command: %v", token.Error())
 	}
 
-	// Wait for the response
+	// Wait for the response with custom timeout
 	select {
 	case resp := <-d.responseChan:
 		if resp.Error {
@@ -325,13 +345,15 @@ func (d *Dome) sendCommand(cmd string) error {
 		}
 
 		d.logger.Debugf("Response: %+v", resp)
-		// TODO: Check if the response value is valid
+		return nil
 
-	case <-time.After(5 * time.Second):
+	case <-time.After(timeout):
 		return fmt.Errorf("timeout waiting for response")
 	}
+}
 
-	return nil
+func (d *Dome) sendCommand(cmd string) error {
+	return d.sendCommandWithTimeout(cmd, 5*time.Second)
 }
 
 // setConfig sends the configuration to the ZRO dome controller.
@@ -415,6 +437,33 @@ func (d *Dome) responseHandler(client mqtt.Client, msg mqtt.Message) {
 	case cmdVersion:
 		d.status.Version = strings.Trim(resp.Value.(string), "()")
 		d.logger.Infof("Dome controller firmware version: %s", d.status.Version)
+	case cmdConnectShutter:
+		if !resp.Error {
+			d.status.ShutterConnected = true
+			d.logger.Info("Shutter connected successfully")
+		} else {
+			d.status.ShutterConnected = false
+			d.logger.Error("Failed to connect to shutter")
+		}
+	case cmdDisconnectShutter:
+		d.status.ShutterConnected = false
+		d.logger.Info("Shutter disconnected")
+	case cmdOpenShutter:
+		if !resp.Error {
+			d.status.Shutter = ShutterStatusOpen
+			d.logger.Info("Shutter opened successfully")
+		} else {
+			d.status.Shutter = ShutterStatusError
+			d.logger.Error("Failed to open shutter")
+		}
+	case cmdCloseShutter:
+		if !resp.Error {
+			d.status.Shutter = ShutterStatusClosed
+			d.logger.Info("Shutter closed successfully")
+		} else {
+			d.status.Shutter = ShutterStatusError
+			d.logger.Error("Failed to close shutter")
+		}
 	}
 
 	// Attempt to send the response to the channel with a timeout
@@ -504,11 +553,43 @@ func (d *Dome) SetShutter(command ShutterCommand) error {
 	switch command {
 	case ShutterOpen:
 		cmd = cmdOpenShutter
+		d.status.Shutter = ShutterStatusOpening
 	case ShutterClose:
 		cmd = cmdCloseShutter
+		d.status.Shutter = ShutterStatusClosing
 	default:
 		return fmt.Errorf("invalid shutter command: %d", command)
 	}
 
 	return d.sendCommand(string(cmd))
+}
+
+// connectShutter attempts to connect to the shutter with retries
+func (d *Dome) connectShutter() error {
+	const maxRetries = 4
+	const retryDelay = 200 * time.Millisecond
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		d.logger.Infof("Connecting to shutter (attempt %d/%d)", attempt, maxRetries)
+
+		// Send connect command
+		if err := d.sendCommandWithTimeout(string(cmdConnectShutter), retryDelay); err != nil {
+			d.logger.Warnf("Shutter connect attempt %d failed: %v", attempt, err)
+
+			// If this was the last attempt, return the error
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to connect to shutter after %d attempts: %v", maxRetries, err)
+			}
+
+			// Wait before retrying
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		// Success - shutter connected
+		d.logger.Infof("Shutter connected successfully on attempt %d", attempt)
+		return nil
+	}
+
+	return fmt.Errorf("failed to connect to shutter after %d attempts", maxRetries)
 }

@@ -186,9 +186,38 @@ func (d *Driver) Status() alpaca.DomeStatus {
 		Slewing:  st.Slewing,
 		Slaved:   d.slaved,
 		Altitude: 0.0,
-		Shutter:  alpaca.ShutterOpen,
+		Shutter:  d.convertShutterStatus(st.Shutter),
 	}
 	return status
+}
+
+// convertShutterStatus converts ZRO ShutterStatus to Alpaca ShutterStatus
+func (d *Driver) convertShutterStatus(zroStatus ShutterStatus) alpaca.ShutterStatus {
+	d.logger.Debugf("Converting shutter status: ZRO=%d to Alpaca", zroStatus)
+	
+	switch zroStatus {
+	case ShutterStatusClosed:
+		d.logger.Debugf("Shutter status: Closed")
+		return alpaca.ShutterClosed
+	case ShutterStatusOpening:
+		d.logger.Debugf("Shutter status: Opening")
+		return alpaca.ShutterOpening
+	case ShutterStatusOpen:
+		d.logger.Debugf("Shutter status: Open")
+		return alpaca.ShutterOpen
+	case ShutterStatusClosing:
+		d.logger.Debugf("Shutter status: Closing")
+		return alpaca.ShutterClosing
+	case ShutterStatusAborted:
+		d.logger.Debugf("Shutter status: Aborted -> Error")
+		return alpaca.ShutterError
+	case ShutterStatusError:
+		d.logger.Debugf("Shutter status: Error")
+		return alpaca.ShutterError
+	default:
+		d.logger.Warnf("Unknown shutter status: %d, defaulting to Closed", zroStatus)
+		return alpaca.ShutterClosed // Default to closed if unknown
+	}
 }
 
 func (d *Driver) Capabilities() alpaca.DomeCapabilities {
