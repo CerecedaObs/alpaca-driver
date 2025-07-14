@@ -5,7 +5,7 @@
 // The code is structured to be easily integrated into a larger system,
 // with logging and error handling in place.
 
-package zro
+package dome
 
 import (
 	"context"
@@ -106,27 +106,29 @@ type Config struct {
 	UseShutter     bool    // True if the shutter is used
 }
 
-var defaultConfig = Config{
-	MQTTConfig: MQTTConfig{
-		Host:      "tcp://localhost:1883",
-		Username:  "",
-		Password:  "",
-		TopicRoot: "/ZRO",
-	},
-	TicksPerTurn:   10476,
-	Tolerance:      4,
-	HomePosition:   0,
-	ParkPosition:   0,
-	AzimuthTimeout: 20000,
-	MaxSpeed:       200,
-	MinSpeed:       30,
-	BrakeSpeed:     80,
-	VelTimeout:     10,
-	ShortDistance:  100,
-	ParkOnShutter:  false,
-	ShutterTimeout: 0,
-	UseShutter:     true,
-	EncoderDiv:     1, // Default encoder divisor
+func DefaultConfig() Config {
+	return Config{
+		MQTTConfig: MQTTConfig{
+			Host:      "tcp://localhost:1883",
+			Username:  "",
+			Password:  "",
+			TopicRoot: "/ZRO",
+		},
+		TicksPerTurn:   10476,
+		Tolerance:      4,
+		HomePosition:   0,
+		ParkPosition:   0,
+		AzimuthTimeout: 20000,
+		MaxSpeed:       200,
+		MinSpeed:       30,
+		BrakeSpeed:     80,
+		VelTimeout:     10,
+		ShortDistance:  100,
+		ParkOnShutter:  false,
+		ShutterTimeout: 0,
+		UseShutter:     true,
+		EncoderDiv:     1, // Default encoder divisor
+	}
 }
 
 func (c *Config) Validate() error {
@@ -249,11 +251,11 @@ func NewDome(client mqtt.Client, config Config, logger log.FieldLogger) (*Dome, 
 	return dome, nil
 }
 
-func (d *Dome) degreesToTicks(degrees float64) int {
+func (d *Dome) DegreesToTicks(degrees float64) int {
 	return int(normalizeAngle(degrees-d.config.HomePosition) * float64(d.config.TicksPerTurn) / 360.0)
 }
 
-func (d *Dome) ticksToDegrees(ticks int) float64 {
+func (d *Dome) TicksToDegrees(ticks int) float64 {
 	return float64(ticks)*360.0/float64(d.config.TicksPerTurn) + d.config.HomePosition
 }
 
@@ -290,10 +292,9 @@ func (d *Dome) Run(ctx context.Context) error {
 	// Connect to the shutter
 	if d.config.UseShutter {
 		if err := d.connectShutter(); err != nil {
-			d.logger.Warnf("Failed to connect to shutter: %v", err)
-			// Don't return error, continue without shutter
+			return fmt.Errorf("failed to connect to shutter: %v", err)
 		}
-		defer d.sendCommand(string(cmdDisconnectShutter))
+		defer d.disconnectShutter()
 	}
 
 	// Read status, firmware version and battery status
@@ -367,7 +368,7 @@ func (d *Dome) setConfig(config Config) error {
 	cfgMap := map[string]int{
 		"TICK": config.TicksPerTurn,
 		"TOLE": config.Tolerance,
-		"PKPO": d.degreesToTicks(config.ParkPosition),
+		"PKPO": d.DegreesToTicks(config.ParkPosition),
 		"AZTO": config.AzimuthTimeout,
 		"MXSP": config.MaxSpeed,
 		"MNSP": config.MinSpeed,
@@ -448,22 +449,6 @@ func (d *Dome) responseHandler(client mqtt.Client, msg mqtt.Message) {
 	case cmdDisconnectShutter:
 		d.status.ShutterConnected = false
 		d.logger.Info("Shutter disconnected")
-	case cmdOpenShutter:
-		if !resp.Error {
-			d.status.Shutter = ShutterStatusOpen
-			d.logger.Info("Shutter opened successfully")
-		} else {
-			d.status.Shutter = ShutterStatusError
-			d.logger.Error("Failed to open shutter")
-		}
-	case cmdCloseShutter:
-		if !resp.Error {
-			d.status.Shutter = ShutterStatusClosed
-			d.logger.Info("Shutter closed successfully")
-		} else {
-			d.status.Shutter = ShutterStatusError
-			d.logger.Error("Failed to close shutter")
-		}
 	}
 
 	// Attempt to send the response to the channel with a timeout
@@ -520,7 +505,7 @@ func (d *Dome) GetStatus() Status {
 }
 
 func (d *Dome) SlewToAzimuth(az float64) error {
-	ticks := d.degreesToTicks(az)
+	ticks := d.DegreesToTicks(az)
 	return d.sendCommand(fmt.Sprintf("%c=%d", cmdGoto, ticks))
 }
 
@@ -566,8 +551,8 @@ func (d *Dome) SetShutter(command ShutterCommand) error {
 
 // connectShutter attempts to connect to the shutter with retries
 func (d *Dome) connectShutter() error {
-	const maxRetries = 4
-	const retryDelay = 200 * time.Millisecond
+	const maxRetries = 10
+	const retryDelay = time.Second
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		d.logger.Infof("Connecting to shutter (attempt %d/%d)", attempt, maxRetries)
@@ -592,4 +577,24 @@ func (d *Dome) connectShutter() error {
 	}
 
 	return fmt.Errorf("failed to connect to shutter after %d attempts", maxRetries)
+}
+
+// disconnectShutter disconnects from the shutter
+func (d *Dome) disconnectShutter() error {
+	if !d.config.UseShutter {
+		return nil // Nothing to disconnect if shutter is not used
+	}
+
+	d.logger.Info("Disconnecting from shutter")
+
+	if err := d.sendCommand(string(cmdDisconnectShutter)); err != nil {
+		d.logger.Warnf("Failed to send disconnect shutter command: %v", err)
+		// Don't return error, just log warning since we're disconnecting anyway
+	}
+
+	// Update status regardless of command success
+	d.status.ShutterConnected = false
+	d.logger.Info("Shutter disconnected")
+
+	return nil
 }

@@ -2,6 +2,7 @@ package zro
 
 import (
 	"alpaca/pkg/alpaca"
+	"alpaca/pkg/dome"
 	"context"
 	"fmt"
 	"html/template"
@@ -35,7 +36,7 @@ const (
 // createMQTTClient initializes and returns a new MQTT client using the configuration
 // retrieved from the provided alpaca.Store. It allows overriding the MQTT broker,
 // username, and password via CLI context flags.
-func createMQTTClient(cfg MQTTConfig) (mqtt.Client, error) {
+func createMQTTClient(cfg dome.MQTTConfig) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions()
 	opts.SetClientID("zro-alpaca")
 	opts.AddBroker(cfg.Host)
@@ -60,7 +61,7 @@ type Driver struct {
 
 	// The MQTT client and the controller are created when the driver is connected
 	client mqtt.Client        // MQTT client
-	dome   *Dome              // ZRO dome controller
+	dome   *dome.Dome         // ZRO dome controller
 	cancel context.CancelFunc // Context cancel function
 }
 
@@ -114,7 +115,7 @@ func (d *Driver) Connect() error {
 	}
 
 	d.client = client
-	d.dome, err = NewDome(client, config, d.logger)
+	d.dome, err = dome.NewDome(client, config, d.logger)
 	if err != nil {
 		d.client.Disconnect(100)
 		d.state = connStateDisconnected
@@ -136,7 +137,7 @@ func (d *Driver) Connect() error {
 
 func (d *Driver) Disconnect() error {
 	if d.state != connStateConnected {
-		return ErrNotConnected
+		return dome.ErrNotConnected
 	}
 
 	if d.cancel != nil {
@@ -180,7 +181,7 @@ func (d *Driver) Status() alpaca.DomeStatus {
 	st := d.dome.GetStatus()
 
 	status := alpaca.DomeStatus{
-		Azimuth:  d.dome.ticksToDegrees(st.Position),
+		Azimuth:  d.dome.TicksToDegrees(st.Position),
 		AtHome:   st.AtHome,
 		AtPark:   st.AtHome, // TODO: Implement park status
 		Slewing:  st.Slewing,
@@ -192,27 +193,19 @@ func (d *Driver) Status() alpaca.DomeStatus {
 }
 
 // convertShutterStatus converts ZRO ShutterStatus to Alpaca ShutterStatus
-func (d *Driver) convertShutterStatus(zroStatus ShutterStatus) alpaca.ShutterStatus {
-	d.logger.Debugf("Converting shutter status: ZRO=%d to Alpaca", zroStatus)
-	
+func (d *Driver) convertShutterStatus(zroStatus dome.ShutterStatus) alpaca.ShutterStatus {
 	switch zroStatus {
-	case ShutterStatusClosed:
-		d.logger.Debugf("Shutter status: Closed")
+	case dome.ShutterStatusClosed:
 		return alpaca.ShutterClosed
-	case ShutterStatusOpening:
-		d.logger.Debugf("Shutter status: Opening")
+	case dome.ShutterStatusOpening:
 		return alpaca.ShutterOpening
-	case ShutterStatusOpen:
-		d.logger.Debugf("Shutter status: Open")
+	case dome.ShutterStatusOpen:
 		return alpaca.ShutterOpen
-	case ShutterStatusClosing:
-		d.logger.Debugf("Shutter status: Closing")
+	case dome.ShutterStatusClosing:
 		return alpaca.ShutterClosing
-	case ShutterStatusAborted:
-		d.logger.Debugf("Shutter status: Aborted -> Error")
+	case dome.ShutterStatusAborted:
 		return alpaca.ShutterError
-	case ShutterStatusError:
-		d.logger.Debugf("Shutter status: Error")
+	case dome.ShutterStatusError:
 		return alpaca.ShutterError
 	default:
 		d.logger.Warnf("Unknown shutter status: %d, defaulting to Closed", zroStatus)
@@ -258,7 +251,7 @@ func (d *Driver) DriverInfo() alpaca.DriverInfo {
 
 func (d *Driver) SlewToAzimuth(az float64) error {
 	if d.state != connStateConnected {
-		return ErrNotConnected
+		return dome.ErrNotConnected
 	}
 
 	return d.dome.SlewToAzimuth(az)
@@ -282,7 +275,7 @@ func (d *Driver) SyncToAltitude(altitude float64) error {
 
 func (d *Driver) AbortSlew() error {
 	if d.state != connStateConnected {
-		return ErrNotConnected
+		return dome.ErrNotConnected
 	}
 
 	return d.dome.AbortSlew()
@@ -290,7 +283,7 @@ func (d *Driver) AbortSlew() error {
 
 func (d *Driver) FindHome() error {
 	if d.state != connStateConnected {
-		return ErrNotConnected
+		return dome.ErrNotConnected
 	}
 
 	return d.dome.FindHome()
@@ -298,7 +291,7 @@ func (d *Driver) FindHome() error {
 
 func (d *Driver) Park() error {
 	if d.state != connStateConnected {
-		return ErrNotConnected
+		return dome.ErrNotConnected
 	}
 
 	return d.dome.Park()
@@ -306,12 +299,12 @@ func (d *Driver) Park() error {
 
 func (d *Driver) SetPark() error {
 	if d.state != connStateConnected {
-		return ErrNotConnected
+		return dome.ErrNotConnected
 	}
 
 	// Get current dome position
 	status := d.dome.GetStatus()
-	currentAzimuth := math.Round(d.dome.ticksToDegrees(status.Position))
+	currentAzimuth := math.Round(d.dome.TicksToDegrees(status.Position))
 
 	// Get current config and update park position
 	cfg, err := d.store.GetConfig()
@@ -338,15 +331,15 @@ func (d *Driver) SetSlaved(slaved bool) error {
 
 func (d *Driver) SetShutter(command alpaca.ShutterCommand) error {
 	if d.state != connStateConnected {
-		return ErrNotConnected
+		return dome.ErrNotConnected
 	}
 
-	var cmd ShutterCommand
+	var cmd dome.ShutterCommand
 	switch command {
 	case alpaca.ShutterCommandOpen:
-		cmd = ShutterOpen
+		cmd = dome.ShutterOpen
 	case alpaca.ShutterCommandClose:
-		cmd = ShutterClose
+		cmd = dome.ShutterClose
 	default:
 		return fmt.Errorf("invalid shutter command: %v", command)
 	}
@@ -383,9 +376,9 @@ func (d *Driver) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (d *Driver) renderSetupForm(w http.ResponseWriter, cfg Config, success bool, err string) {
+func (d *Driver) renderSetupForm(w http.ResponseWriter, cfg dome.Config, success bool, err string) {
 	data := struct {
-		Config
+		dome.Config
 		Success bool
 		Error   string
 	}{cfg, success, err}
@@ -396,12 +389,12 @@ func (d *Driver) renderSetupForm(w http.ResponseWriter, cfg Config, success bool
 	}
 }
 
-func parseDomeSetupForm(r *http.Request) (Config, error) {
+func parseDomeSetupForm(r *http.Request) (dome.Config, error) {
 	if err := r.ParseForm(); err != nil {
-		return Config{}, fmt.Errorf("error parsing form: %v", err)
+		return dome.Config{}, fmt.Errorf("error parsing form: %v", err)
 	}
 
-	cfg := defaultConfig
+	cfg := dome.DefaultConfig()
 	cfg.Host = r.FormValue("mqtt-host")
 	cfg.Username = r.FormValue("mqtt-username")
 	cfg.Password = r.FormValue("mqtt-password")

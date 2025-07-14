@@ -66,19 +66,25 @@ go vet ./...
    - `discovery.go`: Device discovery protocol implementation
    - `store.go`: BoltDB persistence layer for device configurations
 
-2. **Hardware Drivers** (`/pkg/drivers/`)
+2. **Alpaca Drivers** (`/pkg/drivers/`)
 
    - `/zro/`: Real ZRO dome driver using MQTT for hardware communication
    - `/dome_simulator/`: Simulated dome for testing without hardware
 
-3. **MQTT Communication**
+3. **Dome Driver** (`/pkg/dome/`)
+
+   - Actual dome control logic. No alpaca-specific code here.
+   - Handles azimuth slewing, parking, and status reporting
+   - Uses MQTT for communication with hardware
+
+4. **MQTT Communication**
 
    - Uses `paho.mqtt.golang` client
    - Command topic: `/ZRO/commands`
    - Response topic: `/ZRO/responses`
    - Protocol: JSON messages with action/response patterns
 
-4. **Web UI** (`/templates/`)
+5. **Web UI** (`/templates/`)
    - Embedded HTML templates for device setup
    - Accessible at `http://localhost:8090/api/v1/dome/1/setup`
 

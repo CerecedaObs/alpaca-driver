@@ -1,6 +1,7 @@
 package zro
 
 import (
+	"alpaca/pkg/dome"
 	"encoding/json"
 	"fmt"
 
@@ -31,14 +32,14 @@ func NewStore(db *bolt.DB) (*store, error) {
 func (s *store) setDefaults() error {
 	if _, err := s.GetConfig(); err != nil {
 		log.Infof("Setting default MQTT config")
-		s.SetConfig(defaultConfig)
+		s.SetConfig(dome.DefaultConfig())
 	}
 
 	return nil
 }
 
 // SetConfig saves the dome configuration as a json string in the database.
-func (s *store) SetConfig(cfg Config) error {
+func (s *store) SetConfig(cfg dome.Config) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte(bucket))
 		if err != nil {
@@ -51,8 +52,8 @@ func (s *store) SetConfig(cfg Config) error {
 }
 
 // GetConfig retrieves the dome configuration from the database.
-func (s *store) GetConfig() (Config, error) {
-	var cfg Config
+func (s *store) GetConfig() (dome.Config, error) {
+	var cfg dome.Config
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
